@@ -1,0 +1,38 @@
+kalman:
+  method: "MLE"            # "MLE" | "EM"
+  save_path: true
+  max_iter: 200
+  tol: 1e-6
+  init_params:
+    kappa: 1.0
+    sigma_X: 0.3
+    sigma_Y: 0.2
+    rho: 0.3
+    mu: 0.00
+  R: 0.01                  # ruído de medição (escalar ou diag por obs)
+
+risk:
+  source: "returns"        # "returns" | "residuals"
+  lookback: 60
+  shrinkage: true
+
+sizing:
+  method: "vol_target"     # "vol_target" | "qp"
+  vol_target: 0.10
+  qp:
+    gamma: 5.0
+    lambda_l1: 0.0
+    lambda_turnover: 0.1
+
+limits:
+  leverage: 3.0
+  per_tenor_cap: 0.3
+
+thresh:
+  z_in: 1.5
+  z_out: 0.5
+  topK: 4
+
+costs:
+  default_tick_value: 10.0
+  default_fee: 2.0

@@ -1,0 +1,19 @@
+# Virtual Environment
+venv/
+**venv/
+
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Data files (large datasets)
+data/real_data/
+
+# IDE
+.vscode/
+.idea/
