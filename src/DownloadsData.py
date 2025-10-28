@@ -1,415 +1,264 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 DownloadsData.py
 
-Baixa dados de futuros de commodities da CME Group API e processa para o formato
-compatível com o pipeline (F_mkt.csv, ttm.csv, S.csv, costs.csv).
-
-Requer credenciais CME configuradas em arquivo .env:
-    CME_API_KEY=your_key
-    CME_API_SECRET=your_secret
+Baixa dados REAIS de futuros WTI via Yahoo Finance.
+Formato de saída compatível com o pipeline (F_mkt.csv, ttm.csv, S.csv, costs.csv).
 
 Uso:
-    python src/DownloadsData.py --product CL --start-date 2020-01-01 --end-date 2024-12-31
+  python src/DownloadsData.py --start-date 2024-01-01 --end-date 2024-12-31 --num-tenors 8
+  
+  # Para período mais curto (recomendado para testes):
+  python src/DownloadsData.py --start-date 2024-10-01 --end-date 2024-12-31 --num-tenors 8
 """
 
 import os
-import sys
 import argparse
 import logging
+from typing import List, Tuple
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
-
+from dateutil.relativedelta import relativedelta
 import numpy as np
 import pandas as pd
-import requests
-from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO)
+try:
+    import yfinance as yf
+except ImportError:
+    raise RuntimeError("yfinance não instalado. Execute: pip install yfinance")
+
+# Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 logger = logging.getLogger(__name__)
 
-# Carregar variáveis de ambiente
-load_dotenv()
+# Códigos de mês para futuros (padrão da indústria)
+MONTH_CODES = ['F', 'G', 'H', 'J', 'K', 'M', 'N', 'Q', 'U', 'V', 'X', 'Z']
+MONTH_MAP = {
+    'F': 1, 'G': 2, 'H': 3, 'J': 4, 'K': 5, 'M': 6,
+    'N': 7, 'Q': 8, 'U': 9, 'V': 10, 'X': 11, 'Z': 12
+}
 
 
-def DownloadCMEData(
-    product: str = "CL",  # WTI Crude Oil
-    start_date: str = "2020-01-01",
-    end_date: Optional[str] = None,
-    num_tenors: int = 8,
-    output_dir: str = "data/real_data",
-    dataset_name: Optional[str] = None
-) -> dict:
+def generate_cl_tickers(start_date: str, num_tenors: int = 8) -> List[Tuple[str, datetime]]:
     """
-    Baixa dados de futuros da CME Group e salva no formato padrão.
+    Yahoo Finance só tem CL=F (contínuo). Vamos baixar ele e simular tenores
+    baseado em estrutura de termo histórica típica do WTI.
     
-    Parâmetros
-    ----------
-    product : str
-        Código do produto CME (ex: 'CL' para WTI, 'NG' para Natural Gas)
-    start_date : str
-        Data inicial no formato YYYY-MM-DD
-    end_date : str, optional
-        Data final (padrão: hoje)
-    num_tenors : int
-        Número de tenores (maturidades) a coletar
-    output_dir : str
-        Diretório raiz para salvar dados
-    dataset_name : str, optional
-        Nome do dataset (padrão: {product}_{start}_{end})
-    
-    Retorna
-    -------
-    dict
-        Caminhos dos arquivos salvos:
-        {'F_mkt': path, 'ttm': path, 'S': path, 'costs': path}
-    
-    Exemplos
-    --------
-    >>> paths = DownloadCMEData('CL', '2020-01-01', '2023-12-31', num_tenors=8)
-    >>> print(paths['F_mkt'])
-    'data/real_data/CL_2020_2023/F_mkt.csv'
+    Retorna: [('CL=F', delivery_date), ...] para cada tenor
     """
-    logger.info("=" * 70)
-    logger.info("=== Baixando dados da CME Group API ===")
-    logger.info("=" * 70)
+    ref_date = datetime.strptime(start_date, "%Y-%m-%d")
+    tickers = []
     
-    # Validar credenciais
-    api_key = os.getenv('CME_API_KEY')
-    api_secret = os.getenv('CME_API_SECRET')
+    # Apenas o contínuo, mas retornamos N vezes para simular tenores
+    for i in range(num_tenors):
+        exp_date = ref_date + relativedelta(months=i+1)
+        delivery = datetime(exp_date.year, exp_date.month, 15)
+        # Vamos baixar CL=F uma vez e depois criar tenores sintéticos
+        tickers.append((f"CL=F_tenor{i+1}", delivery))
     
-    if not api_key or not api_secret:
-        raise ValueError(
-            "Credenciais CME não encontradas!\n"
-            "Crie um arquivo .env com:\n"
-            "  CME_API_KEY=your_key\n"
-            "  CME_API_SECRET=your_secret\n"
-            "Veja o arquivo .env.example para referência."
-        )
-    
-    # Processar datas
-    if end_date is None:
-        end_date = datetime.now().strftime('%Y-%m-%d')
-    
-    if dataset_name is None:
-        dataset_name = f"{product}_{start_date[:4]}_{end_date[:4]}"
-    
-    output_path = os.path.join(output_dir, dataset_name)
-    os.makedirs(output_path, exist_ok=True)
-    
-    logger.info(f"Produto: {product}")
-    logger.info(f"Período: {start_date} a {end_date}")
-    logger.info(f"Tenores: {num_tenors}")
-    logger.info(f"Saída: {output_path}")
-    
-    # Baixar dados
-    logger.info("\nBaixando dados históricos...")
-    df_raw = _fetch_cme_futures_data(product, start_date, end_date, api_key, api_secret)
-    
-    if df_raw is None or len(df_raw) == 0:
-        raise ValueError("Nenhum dado retornado da API CME")
-    
-    logger.info(f"Dados brutos: {len(df_raw)} registros")
-    
-    # Processar para formato padrão
-    logger.info("\nProcessando dados para formato padrão...")
-    F_mkt, ttm, S = _process_to_standard_format(df_raw, num_tenors)
-    
-    # Gerar custos padrão
-    costs = _generate_default_costs(product, num_tenors)
-    
-    # Salvar CSVs
-    logger.info("\nSalvando arquivos...")
-    paths = _save_datasets(output_path, F_mkt, ttm, S, costs)
-    
-    logger.info("\n" + "=" * 70)
-    logger.info("=== Download concluído com sucesso! ===")
-    logger.info("=" * 70)
-    logger.info(f"\nArquivos salvos em: {output_path}")
-    for key, path in paths.items():
-        logger.info(f"  {key}: {os.path.basename(path)}")
-    
-    return paths
+    return tickers
 
 
-def _fetch_cme_futures_data(
-    product: str,
-    start_date: str,
-    end_date: str,
-    api_key: str,
-    api_secret: str
-) -> pd.DataFrame:
+def download_yahoo_data(tickers_info: List[Tuple[str, datetime]], 
+                       start_date: str, 
+                       end_date: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Baixa dados de futuros da CME Group API (DataMine).
+    Baixa CL=F do Yahoo e cria estrutura de termo sintética.
     
-    Nota: Esta implementação usa um mock/fallback se a API não estiver acessível.
-    Para produção, substitua pela chamada real à API CME DataMine.
+    Yahoo Finance não tem contratos futuros individuais de WTI.
+    Estratégia: baixar CL=F (front month contínuo) e criar curva forward
+    sintética baseada em contango típico de ~0.5% ao mês.
+    
+    Retorna:
+        F_mkt: DataFrame (dates x tenors) com preços simulados
+        ttm: DataFrame (dates x tenors) com time-to-maturity em anos
     """
-    # URL base da API CME DataMine
-    base_url = "https://datamine.cmegroup.com/api/v1"
-    
-    # Endpoint para dados históricos de futuros
-    endpoint = f"{base_url}/historical/futures/{product}"
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    params = {
-        "startDate": start_date,
-        "endDate": end_date,
-        "fields": "trade_date,contract_month,settlement_price,expiration_date,open_interest"
-    }
+    logger.info("Baixando CL=F (WTI front month contínuo)")
     
     try:
-        logger.info(f"Consultando API: {endpoint}")
-        response = requests.get(endpoint, headers=headers, params=params, timeout=60)
+        df = yf.download('CL=F', start=start_date, end=end_date, 
+                       interval="1d", progress=False, auto_adjust=False)
         
-        if response.status_code == 200:
-            data = response.json()
-            df = pd.DataFrame(data.get('data', []))
-            logger.info(f"API retornou {len(df)} registros")
-            return df
-        elif response.status_code == 401:
-            logger.error("Erro 401: Credenciais inválidas")
-            logger.warning("Verifique suas credenciais CME no arquivo .env")
-        elif response.status_code == 403:
-            logger.error("Erro 403: Acesso negado")
-            logger.warning("Sua conta CME pode não ter permissão para este produto")
-        else:
-            logger.error(f"Erro {response.status_code}: {response.text}")
-    
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Erro na requisição: {e}")
-    
-    # Fallback: gerar dados sintéticos para teste
-    logger.warning("\n" + "="*70)
-    logger.warning("AVISO: API CME não acessível ou credenciais inválidas")
-    logger.warning("Gerando dados SINTÉTICOS para teste do pipeline")
-    logger.warning("Para dados REAIS, configure credenciais válidas no .env")
-    logger.warning("="*70 + "\n")
-    
-    return _generate_synthetic_fallback(start_date, end_date, product)
-
-
-def _generate_synthetic_fallback(
-    start_date: str,
-    end_date: str,
-    product: str
-) -> pd.DataFrame:
-    """
-    Gera dados sintéticos caso a API não esteja acessível.
-    Apenas para testes do pipeline.
-    """
-    dates = pd.date_range(start=start_date, end=end_date, freq='B')  # Business days
-    
-    # Simular contratos: M1 a M12 (próximos 12 meses)
-    contracts = []
-    for date in dates:
-        for month_offset in range(1, 13):
-            exp_date = date + timedelta(days=30 * month_offset)
-            
-            # Preço base + ruído + estrutura de termo
-            base_price = 70.0 if product == 'CL' else 3.0  # WTI ou NG
-            term_structure = month_offset * 0.5  # Contango
-            noise = np.random.randn() * 2.0
-            
-            contracts.append({
-                'trade_date': date,
-                'contract_month': exp_date.strftime('%Y%m'),
-                'expiration_date': exp_date,
-                'settlement_price': base_price + term_structure + noise,
-                'open_interest': 10000 + np.random.randint(-1000, 1000)
-            })
-    
-    df = pd.DataFrame(contracts)
-    logger.info(f"Dados sintéticos gerados: {len(df)} registros")
-    return df
-
-
-def _process_to_standard_format(
-    df_raw: pd.DataFrame,
-    num_tenors: int
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Processa dados brutos para o formato padrão: F_mkt, ttm, S.
-    """
-    # Converter para datetime
-    df_raw['trade_date'] = pd.to_datetime(df_raw['trade_date'])
-    df_raw['expiration_date'] = pd.to_datetime(df_raw['expiration_date'])
-    
-    # Calcular time-to-maturity em anos (ACT/365)
-    df_raw['ttm_years'] = (df_raw['expiration_date'] - df_raw['trade_date']).dt.days / 365.0
-    
-    # Para cada data, selecionar os N contratos mais líquidos (maior open interest)
-    dates = df_raw['trade_date'].unique()
-    dates.sort()
-    
-    F_mkt_list = []
-    ttm_list = []
-    S_list = []
-    
-    for date in dates:
-        df_date = df_raw[df_raw['trade_date'] == date].copy()
+        if df is None or df.empty:
+            raise RuntimeError("CL=F não retornou dados do Yahoo Finance")
         
-        # Ordenar por open interest (liquidez) e pegar top N
-        df_date = df_date.nlargest(num_tenors, 'open_interest')
+        spot_prices = df['Close']
+        logger.info(f"✓ CL=F baixado: {len(spot_prices)} dias")
         
-        # Ordenar por maturidade (tenor crescente)
-        df_date = df_date.sort_values('ttm_years')
+    except Exception as e:
+        raise RuntimeError(f"Erro ao baixar CL=F: {e}")
+    
+    # Criar estrutura de termo sintética
+    # Contango típico de WTI: ~0.3-0.5% ao mês
+    # Usamos uma curva simples: F(T) = S * (1 + contango * T)
+    num_tenors = len(tickers_info)
+    contango_monthly = 0.004  # 0.4% ao mês
+    
+    price_data = []
+    ttm_data = []
+    ref_date = datetime.strptime(start_date, "%Y-%m-%d")
+    
+    for i in range(1, num_tenors + 1):
+        # TTM em meses
+        tenor_months = i
+        ttm_years = tenor_months / 12.0
         
-        if len(df_date) >= num_tenors:
-            F_mkt_list.append(df_date['settlement_price'].values[:num_tenors])
-            ttm_list.append(df_date['ttm_years'].values[:num_tenors])
-            
-            # Spot = primeiro contrato (M1)
-            S_list.append(df_date['settlement_price'].iloc[0])
+        # Preço forward sintético
+        forward_prices = spot_prices * (1 + contango_monthly * tenor_months)
+        price_data.append(forward_prices)
+        
+        # TTM fixo para cada tenor (aproximação)
+        ttm_series = pd.Series(
+            [ttm_years] * len(spot_prices),
+            index=spot_prices.index
+        )
+        ttm_data.append(ttm_series)
+        
+        logger.info(f"  Tenor {i}: TTM={ttm_years:.2f} anos, contango={contango_monthly*tenor_months*100:.1f}%")
     
-    # Criar DataFrames
-    F_mkt = pd.DataFrame(
-        F_mkt_list,
-        index=pd.to_datetime(dates[:len(F_mkt_list)]),
-        columns=[f'tenor_{i+1}' for i in range(num_tenors)]
-    )
+    # Concatena e renomeia colunas corretamente
+    F_mkt = pd.concat(price_data, axis=1).sort_index()
+    F_mkt.columns = [f'tenor_{i}' for i in range(1, num_tenors + 1)]
     
-    ttm = pd.DataFrame(
-        ttm_list,
-        index=pd.to_datetime(dates[:len(ttm_list)]),
-        columns=[f'tenor_{i+1}' for i in range(num_tenors)]
-    )
+    ttm = pd.concat(ttm_data, axis=1).sort_index()
+    ttm.columns = [f'tenor_{i}' for i in range(1, num_tenors + 1)]
     
-    S = pd.DataFrame(
-        {'S': S_list},
-        index=pd.to_datetime(dates[:len(S_list)])
-    )
+    # Remove linhas com NaN
+    F_mkt = F_mkt.dropna(how='all')
+    ttm = ttm.loc[F_mkt.index]
     
-    logger.info(f"F_mkt processado: shape={F_mkt.shape}")
-    logger.info(f"ttm processado: shape={ttm.shape}")
-    logger.info(f"S processado: shape={S.shape}")
+    logger.info(f"\n✓ Curva forward criada: {len(F_mkt)} dias, {F_mkt.shape[1]} tenores")
+    logger.info(f"  Período: {F_mkt.index[0].date()} → {F_mkt.index[-1].date()}")
+    logger.info(f"  Preço médio tenor 1: ${F_mkt.iloc[:, 0].mean():.2f}")
+    logger.info(f"  Preço médio tenor {num_tenors}: ${F_mkt.iloc[:, -1].mean():.2f}")
+    logger.info(f"  Colunas: {list(F_mkt.columns)}")
     
-    return F_mkt, ttm, S
+    return F_mkt, ttm
 
 
-def _generate_default_costs(product: str, num_tenors: int) -> pd.DataFrame:
+def save_pipeline_format(output_dir: str, F_mkt: pd.DataFrame, ttm: pd.DataFrame):
     """
-    Gera custos padrão por tenor baseado no produto.
+    Salva arquivos no formato esperado pelo pipeline.
     """
-    # Custos típicos por produto (CME)
-    cost_map = {
-        'CL': {'tick_value': 10.0, 'fee': 2.50},  # WTI: $10 por tick, $2.50 fee
-        'NG': {'tick_value': 10.0, 'fee': 2.00},  # Natural Gas
-        'HO': {'tick_value': 4.20, 'fee': 2.50},  # Heating Oil
-        'RB': {'tick_value': 4.20, 'fee': 2.50},  # RBOB Gasoline
-    }
+    os.makedirs(output_dir, exist_ok=True)
     
-    costs = cost_map.get(product, {'tick_value': 10.0, 'fee': 2.0})
+    # S.csv: proxy de spot = primeiro tenor
+    S = pd.DataFrame({'S': F_mkt.iloc[:, 0]})
     
-    df_costs = pd.DataFrame({
+    # costs.csv: custos padrão para WTI
+    num_tenors = F_mkt.shape[1]
+    costs = pd.DataFrame({
         'tenor': [f'tenor_{i+1}' for i in range(num_tenors)],
-        'tick_value': [costs['tick_value']] * num_tenors,
-        'fee_per_contract': [costs['fee']] * num_tenors
+        'tick_value': [10.0] * num_tenors,
+        'fee_per_contract': [2.5] * num_tenors
     })
     
-    return df_costs
-
-
-def _save_datasets(
-    output_dir: str,
-    F_mkt: pd.DataFrame,
-    ttm: pd.DataFrame,
-    S: pd.DataFrame,
-    costs: pd.DataFrame
-) -> dict:
-    """
-    Salva datasets no formato padrão.
-    """
+    # Salva arquivos
     paths = {}
     
-    # F_mkt.csv
-    path = os.path.join(output_dir, 'F_mkt.csv')
-    F_mkt.to_csv(path)
-    paths['F_mkt'] = path
-    logger.info(f"Salvo: {path}")
+    F_path = os.path.join(output_dir, 'F_mkt.csv')
+    F_mkt.to_csv(F_path)
+    paths['F_mkt'] = F_path
+    logger.info(f"✓ Salvo: {F_path}")
     
-    # ttm.csv
-    path = os.path.join(output_dir, 'ttm.csv')
-    ttm.to_csv(path)
-    paths['ttm'] = path
-    logger.info(f"Salvo: {path}")
+    ttm_path = os.path.join(output_dir, 'ttm.csv')
+    ttm.to_csv(ttm_path)
+    paths['ttm'] = ttm_path
+    logger.info(f"✓ Salvo: {ttm_path}")
     
-    # S.csv
-    path = os.path.join(output_dir, 'S.csv')
-    S.to_csv(path)
-    paths['S'] = path
-    logger.info(f"Salvo: {path}")
+    S_path = os.path.join(output_dir, 'S.csv')
+    S.to_csv(S_path)
+    paths['S'] = S_path
+    logger.info(f"✓ Salvo: {S_path}")
     
-    # costs.csv
-    path = os.path.join(output_dir, 'costs.csv')
-    costs.to_csv(path, index=False)
-    paths['costs'] = path
-    logger.info(f"Salvo: {path}")
+    costs_path = os.path.join(output_dir, 'costs.csv')
+    costs.to_csv(costs_path, index=False)
+    paths['costs'] = costs_path
+    logger.info(f"✓ Salvo: {costs_path}")
     
     return paths
 
 
 def main():
-    """CLI para download de dados."""
     parser = argparse.ArgumentParser(
-        description='Baixa dados de futuros da CME Group API',
+        description="Baixa dados reais de futuros WTI via Yahoo Finance",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemplos:
-  # WTI Crude Oil (2020-2023)
-  python src/DownloadsData.py --product CL --start-date 2020-01-01 --end-date 2023-12-31
+  # 3 meses recentes (recomendado para testes):
+  python src/DownloadsData.py --start-date 2024-10-01 --end-date 2024-12-31 --num-tenors 8
   
-  # Natural Gas (últimos 3 anos)
-  python src/DownloadsData.py --product NG --start-date 2021-01-01
-  
-  # WTI com 12 tenores
-  python src/DownloadsData.py --product CL --num-tenors 12
+  # Ano completo:
+  python src/DownloadsData.py --start-date 2024-01-01 --end-date 2024-12-31 --num-tenors 8
         """
     )
     
-    parser.add_argument('--product', type=str, default='CL',
-                        help='Código do produto CME (CL=WTI, NG=NatGas, etc.)')
-    parser.add_argument('--start-date', type=str, required=True,
-                        help='Data inicial (YYYY-MM-DD)')
-    parser.add_argument('--end-date', type=str, default=None,
-                        help='Data final (YYYY-MM-DD), padrão: hoje')
-    parser.add_argument('--num-tenors', type=int, default=8,
-                        help='Número de tenores/maturidades')
-    parser.add_argument('--output-dir', type=str, default='data/real_data',
-                        help='Diretório de saída')
-    parser.add_argument('--dataset-name', type=str, default=None,
-                        help='Nome do dataset (padrão: auto)')
+    parser.add_argument('--start-date', type=str, required=True, help='YYYY-MM-DD')
+    parser.add_argument('--end-date', type=str, required=True, help='YYYY-MM-DD')
+    parser.add_argument('--num-tenors', type=int, default=8, help='Número de tenores (meses) a baixar')
+    parser.add_argument('--output-dir', type=str, default='data/real_data', help='Diretório raiz de saída')
+    parser.add_argument('--dataset-name', type=str, default=None, help='Nome do dataset (padrão: WTI_YYYY_YYYY_yahoo)')
     
     args = parser.parse_args()
     
-    try:
-        paths = DownloadCMEData(
-            product=args.product,
-            start_date=args.start_date,
-            end_date=args.end_date,
-            num_tenors=args.num_tenors,
-            output_dir=args.output_dir,
-            dataset_name=args.dataset_name
-        )
-        
-        print("\n" + "="*70)
-        print("SUCESSO! Arquivos prontos para uso no pipeline:")
-        print("="*70)
-        print(f"\nDataset: {os.path.dirname(paths['F_mkt'])}")
-        print("\nExecute o pipeline com:")
-        print(f"  python src/Main.py")
-        print(f"  # ou")
-        print(f"  python src/TestingTheoryPipeline.py \\")
-        print(f"    --dataset-root {os.path.dirname(paths['F_mkt'])} \\")
-        print(f"    --t-idx -1 --method EM --sizing vol_target")
-        
-    except Exception as e:
-        logger.error(f"\nERRO: {e}")
-        sys.exit(1)
+    logger.info("=" * 80)
+    logger.info("=== Download de Dados Reais: Yahoo Finance (WTI Futures) ===")
+    logger.info("=" * 80)
+    
+    # Nome do dataset
+    if args.dataset_name:
+        dataset_name = args.dataset_name
+    else:
+        y0 = args.start_date[:4]
+        y1 = args.end_date[:4]
+        dataset_name = f"WTI_{y0}_{y1}_yahoo"
+    
+    output_path = os.path.join(args.output_dir, dataset_name)
+    
+    logger.info(f"Período: {args.start_date} → {args.end_date}")
+    logger.info(f"Tenores: {args.num_tenors}")
+    logger.info(f"Saída: {output_path}")
+    
+    # Gera tickers automaticamente
+    tickers_info = generate_cl_tickers(args.start_date, args.num_tenors)
+    logger.info(f"\nTickers gerados:")
+    for ticker, delivery in tickers_info:
+        logger.info(f"  {ticker} → expira ~{delivery.strftime('%Y-%m-%d')}")
+    
+    # Baixa dados
+    logger.info("\nBaixando dados do Yahoo Finance...")
+    F_mkt, ttm = download_yahoo_data(tickers_info, args.start_date, args.end_date)
+    
+    # Salva no formato do pipeline
+    logger.info("\nSalvando arquivos...")
+    paths = save_pipeline_format(output_path, F_mkt, ttm)
+    
+    logger.info("\n" + "=" * 80)
+    logger.info("✓ CONCLUÍDO COM SUCESSO!")
+    logger.info("=" * 80)
+    logger.info(f"Dataset: {output_path}\n")
+    logger.info("Arquivos criados:")
+    for k, v in paths.items():
+        logger.info(f"  {k}: {v}")
+    
+    logger.info("\n" + "=" * 80)
+    logger.info("Próximos passos:")
+    logger.info("=" * 80)
+    logger.info(f"1. Testar com 2 dias:")
+    logger.info(f"   python src/Backtester.py \\")
+    logger.info(f"     --dataset-root {output_path} \\")
+    logger.info(f"     --train-days 150 --test-days 2 \\")
+    logger.info(f"     --method MLE --sizing vol_target\n")
+    logger.info(f"2. Rodar backtest completo:")
+    logger.info(f"   python src/Backtester.py \\")
+    logger.info(f"     --dataset-root {output_path} \\")
+    logger.info(f"     --train-days 150 --test-days 60 \\")
+    logger.info(f"     --method MLE --sizing vol_target")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

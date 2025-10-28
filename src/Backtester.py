@@ -63,6 +63,7 @@ def RunBacktest(
     # Backtesting loop
     pnl_history = []
     trade_history = []
+    prediction_history = []  # Novo: salvar previsões
     position = np.zeros(M)
     cash = 0.0
     
@@ -114,6 +115,14 @@ def RunBacktest(
             
             target_w = trade_result['target_w']
             
+            # Salvar previsões do modelo
+            prediction_history.append({
+                'date': F_mkt.index[t],
+                't': t,
+                **{f'F_model_{i}': model_result['F_model_t'][i] for i in range(M)},
+                **{f'F_mkt_{i}': F_mkt.iloc[t].values[i] for i in range(M)}
+            })
+            
         except Exception as e:
             logger.warning(f"Erro dia {t}: {e}")
             target_w = position.copy()
@@ -152,18 +161,16 @@ def RunBacktest(
     
     df_pnl = pd.DataFrame(pnl_history)
     df_trades = pd.DataFrame(trade_history) if trade_history else pd.DataFrame()
+    df_predictions = pd.DataFrame(prediction_history) if prediction_history else pd.DataFrame()
     
-    logger.info(f"\n[2/5] Calculando benchmarks...")
+    logger.info(f"\n[2/4] Calculando benchmarks...")
     benchmarks = _calculate_benchmarks(F_mkt, S, train_days, test_days)
     
-    logger.info(f"\n[3/5] Calculando métricas...")
+    logger.info(f"\n[3/4] Calculando métricas...")
     metrics = _calculate_metrics(df_pnl, df_trades, benchmarks)
     
-    logger.info(f"\n[4/5] Salvando resultados...")
-    _save_results(output_dir, df_pnl, df_trades, metrics, benchmarks)
-    
-    logger.info(f"\n[5/5] Gerando gráficos...")
-    _generate_plots(output_dir, F_mkt, df_pnl, df_trades, benchmarks, train_days, test_days, M)
+    logger.info(f"\n[4/4] Salvando resultados...")
+    _save_results(output_dir, df_pnl, df_trades, df_predictions, metrics, benchmarks, F_mkt, train_days, test_days)
     
     logger.info("\n" + "=" * 80)
     logger.info(f"P&L Total: ${metrics['strategy']['total_pnl']:.2f}")
@@ -269,10 +276,22 @@ def _calculate_metrics(df_pnl, df_trades, benchmarks):
     return {'strategy': strategy_metrics, 'benchmarks': benchmark_metrics}
 
 
-def _save_results(output_dir, df_pnl, df_trades, metrics, benchmarks):
+def _save_results(output_dir, df_pnl, df_trades, df_predictions, metrics, benchmarks, F_mkt, train_days, test_days):
     df_pnl.to_csv(f"{output_dir}/pnl_daily.csv", index=False)
     if len(df_trades) > 0:
         df_trades.to_csv(f"{output_dir}/trades.csv", index=False)
+    
+    # Salvar previsões do modelo
+    if len(df_predictions) > 0:
+        df_predictions.to_csv(f"{output_dir}/model_predictions.csv", index=False)
+        logger.info(f"  ✓ Previsões salvas: {len(df_predictions)} dias")
+    
+    # Salvar dados de mercado do período de teste
+    test_start = train_days
+    test_end = train_days + test_days
+    F_mkt_test = F_mkt.iloc[test_start:test_end]
+    F_mkt_test.to_csv(f"{output_dir}/market_data.csv")
+    logger.info(f"  ✓ Market data salvo: {len(F_mkt_test)} dias")
     
     metrics_df = pd.DataFrame({
         'Metric': ['Total P&L', 'Sharpe', 'Max DD', 'Win Rate', 'Trades'],
@@ -291,59 +310,6 @@ def _save_results(output_dir, df_pnl, df_trades, metrics, benchmarks):
     metrics_df.to_csv(f"{output_dir}/metrics.csv", index=False)
 
 
-def _generate_plots(output_dir, F_mkt, df_pnl, df_trades, benchmarks, train_days, test_days, M):
-    images_dir = f"{output_dir}/images"
-    
-    # Gráfico principal: P&L
-    fig, ax = plt.subplots(figsize=(16, 8))
-    ax.plot(df_pnl['t'] - train_days, df_pnl['pnl_cum'], linewidth=3, label='Model', color='#2E86AB')
-    
-    colors = ['#A23B72', '#F18F01', '#06A77D']
-    for i, (name, bench) in enumerate(benchmarks.items()):
-        ax.plot(range(len(bench['pnl_cum'])), bench['pnl_cum'], linewidth=2.5,
-               label=name, color=colors[i], linestyle='--', alpha=0.8)
-    
-    ax.axhline(0, color='black', linewidth=1, linestyle=':', alpha=0.5)
-    ax.set_xlabel('Dias', fontsize=14, fontweight='bold')
-    ax.set_ylabel('P&L ($)', fontsize=14, fontweight='bold')
-    ax.set_title('Backtest: Estratégia vs Benchmarks', fontsize=16, fontweight='bold')
-    ax.legend(loc='upper left', fontsize=12)
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(f"{images_dir}/00_pnl_comparison.png", dpi=150, bbox_inches='tight')
-    plt.close()
-    
-    # Gráficos por tenor
-    test_start = train_days
-    test_end = train_days + test_days
-    
-    for tenor_idx in range(M):
-        fig, ax = plt.subplots(figsize=(16, 7))
-        time_axis = np.arange(len(F_mkt))
-        ax.plot(time_axis, F_mkt.iloc[:, tenor_idx], linewidth=1.5, color='#34495e', alpha=0.6)
-        
-        ax.axvspan(test_start, test_end, alpha=0.1, color='green', label='Teste')
-        ax.axvspan(0, test_start, alpha=0.05, color='gray', label='Treino')
-        
-        if len(df_trades) > 0:
-            trades_tenor = df_trades[df_trades['tenor'] == tenor_idx]
-            for _, trade in trades_tenor.iterrows():
-                t = trade['t']
-                color = 'green' if trade['side'] == 'BUY' else 'red'
-                marker = '^' if trade['side'] == 'BUY' else 'v'
-                ax.scatter(t, F_mkt.iloc[t, tenor_idx], s=150, marker=marker,
-                          color=color, edgecolors='black', linewidth=2, zorder=5)
-        
-        ax.axvline(test_start, color='black', linewidth=2, linestyle='--', alpha=0.7)
-        ax.set_xlabel('Tempo (dias)', fontsize=13, fontweight='bold')
-        ax.set_ylabel('Preço ($)', fontsize=13, fontweight='bold')
-        ax.set_title(f'Sinais - Tenor {tenor_idx+1}', fontsize=14, fontweight='bold')
-        ax.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(f"{images_dir}/{tenor_idx+1:02d}_tenor_{tenor_idx+1}_signals.png", dpi=150)
-        plt.close()
-    
-    logger.info(f"  Gráficos salvos em {images_dir}")
 
 
 def main():
