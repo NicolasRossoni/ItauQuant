@@ -13,6 +13,14 @@ Salva CSVs: F_mkt.csv, ttm.csv, S.csv (opcional), costs.csv (opcional)
 
 Função pública: GenerateFakeDataset(...)
 Script CLI: python src/GenerateFakeData.py --dataset-name wti_synth_01 --T 1500 --M 8
+
+Exemplos:
+----------
+Fake Data:
+>>> python src/GenerateFakeData.py --dataset-name wti_synth_01 --T 1500 --M 8
+Real Data: (YF)
+>>> python src/GenerateFakeData.py --dataset-name brent_real_01 --M 8 --use-real-data --start-date 2023-01-01 --end-date 2023-12-31
+
 """
 
 import numpy as np
@@ -21,19 +29,45 @@ import os
 import logging
 import argparse
 from typing import Tuple, Dict
+import yfinance as yf
+from datetime import datetime, timedelta
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def _fetch_real_data(start_date: str, end_date: str, ticker: str = "BZ=F") -> pd.DataFrame:
+    """
+    Busca dados reais do Yahoo Finance.
+    
+    Parâmetros
+    ----------
+    start_date : str
+        Data inicial no formato 'YYYY-MM-DD'
+    end_date : str
+        Data final no formato 'YYYY-MM-DD'
+    ticker : str
+        Símbolo do ativo (default: "BZ=F" para Brent Crude Oil)
+    
+    Retorna
+    -------
+    pd.DataFrame
+        Dados históricos do ativo
+    """
+    data = yf.download(ticker, start=start_date, end=end_date)
+    return data['Close']  # Usando apenas o preço ajustado
 
 def GenerateFakeDataset(
     dataset_name: str,
     T: int,
     M: int,
     seed: int = 42,
-    out_root: str = "data/fakedata"
+    out_root: str = None, # Complementada a seguir (L93)
+    use_real_data: bool = False,
+    start_date: str = None,
+    end_date: str = None
 ) -> dict:
-    """
+    '''
     Gera dataset sintético no formato Schwartz-Smith.
     
     Parâmetros
@@ -63,25 +97,63 @@ def GenerateFakeDataset(
     --------
     >>> paths = GenerateFakeDataset("wti_synth_01", T=1500, M=8)
     >>> print(paths['F_mkt_path'])
-    """
+    '''
+    # Definindo Diretório da Saída
+    if out_root is None:
+        out_root = "data/realData" if use_real_data else "data/fakedata"
+
     logger.info(f"=== Gerando dataset sintético: {dataset_name} ===")
-    logger.info(f"T={T}, M={M}, seed={seed}")
+    logger.info(f"T={T}, M={M}, seed={seed}, use_real_data={use_real_data}")
+    logger.info(f"Diretório de Saída: {out_root}")
     
     np.random.seed(seed)
     
-    # Parâmetros do modelo (ground truth)
-    Theta = {
-        'kappa': 1.5,
-        'sigma_X': 0.35,
-        'sigma_Y': 0.15,
-        'rho': 0.4,
-        'mu': 0.02
-    }
-    
+    if use_real_data:
+        # Buscar dados reais para determinar T
+        real_prices = _fetch_real_data(start_date, end_date)
+        T = len(real_prices) # T = Número real de dias
+
+        # Retornos Log para estimar parametros
+        log_returns = np.log(real_prices / real_prices.shift(1)).dropna()
+        vol = np.std(log_returns) * np.sqrt(252)  # Anualizado 
+        
+        # @ Log - Debug 
+        #Logger.info(f"Dados reais carregados: {T} dias, volatilidade anualizada estimada: {vol:.4f}")
+
+        # Parâmetros do modelo (ground truth)
+        Theta = {
+            'kappa': 1.5,
+            'sigma_X': vol * 0.6,
+            'sigma_Y': vol * 0.4, #foco maior no curto prazo (X)
+            'rho': 0.4,
+            'mu': np.mean(log_returns) * 252 #drift anualizado
+        }
+
+        Y = np.log(real_prices.values)  # Log dos preços reais
+        X = np.zeros(T)  # Inicializar X como desvios com o tamanho correto
+
+        # Garantir que são arrays 1D
+        Y = Y.reshape(-1)  # Reshape para garantir array 1D
+        X = X.reshape(-1)  # Reshape para garantir array 1D
+        
+        logger.info(f"Estados baseados em dados reais: X shape={X.shape}, Y shape={Y.shape}")
+
+    else: 
+        # Parâmetros do modelo (ground truth)
+        Theta = {
+            'kappa': 1.5,
+            'sigma_X': 0.35,
+            'sigma_Y': 0.15,
+            'rho': 0.4,
+            'mu': 0.02
+        }
+        X, Y = _simulate_states(T, Theta) # Metodo antigo 
+
     logger.info(f"Parâmetros do modelo: {Theta}")
     
-    # 1. Simular estados X_t e Y_t
-    X, Y = _simulate_states(T, Theta)
+    # 1. Simular estados X_t e Y_t --------- antigos 
+    # X, Y = _simulate_states(T, Theta)
+
     logger.info(f"Estados simulados: X shape={X.shape}, Y shape={Y.shape}")
     
     # 2. Construir grade de TTM
@@ -92,9 +164,9 @@ def GenerateFakeDataset(
     F_model_path = _forward_closed_form_path(X, Y, Theta, ttm)
     logger.info(f"F_model calculado: shape={F_model_path.shape}")
     
-    # 4. Injetar ruído de mercado para criar F_mkt
-    F_mkt = _inject_market_noise(F_model_path, ttm, scheme='lognormal')
-    logger.info(f"F_mkt com ruído gerado: shape={F_mkt.shape}")
+    # 4. Injetar ruído de mercado para criar F_mkt (apenas para dados sintéticos)
+    F_mkt = F_model_path if use_real_data else _inject_market_noise(F_model_path, ttm, scheme='lognormal')
+    logger.info(f"F_mkt {'sem' if use_real_data else 'com'} ruído gerado: shape={F_mkt.shape}")
     
     # 5. Calcular spot (opcional)
     S = np.exp(X + Y)
@@ -398,8 +470,14 @@ def main():
                         help='Número de tenores')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed')
-    parser.add_argument('--out-root', type=str, default='data/fakedata',
+    parser.add_argument('--out-root', type=str, default=None,
                         help='Diretório raiz para output')
+    parser.add_argument('--use-real-data', action='store_true',
+                      help='Usar dados reais do Yahoo Finance')
+    parser.add_argument('--start-date', type=str,
+                      help='Data inicial para dados reais (YYYY-MM-DD)')
+    parser.add_argument('--end-date', type=str,
+                      help='Data final para dados reais (YYYY-MM-DD)')
     
     args = parser.parse_args()
     
@@ -408,8 +486,11 @@ def main():
         T=args.T,
         M=args.M,
         seed=args.seed,
-        out_root=args.out_root
-    )
+        out_root=args.out_root,
+        use_real_data=args.use_real_data,
+        start_date=args.start_date,
+        end_date=args.end_date
+        )
     
     print("\n=== Dataset gerado com sucesso ===")
     for key, path in paths.items():
