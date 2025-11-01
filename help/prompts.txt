@@ -1,0 +1,163 @@
+BACKUP DOS PROMPTS ORIGINAIS
+============================
+
+Arquivo criado em: 2025-10-31T21:13:02-03:00
+Este arquivo contém todos os prompts originais escritos pelo usuário antes do refatoramento.
+
+-----------------------
+
+ARQUIVO: README.md
+
+prompt: 
+"""
+Todos os arquivos desse código  ssao pedacos de um grnade prompt para o refarorar o projeto denrto de _old/. e esse é o prompt principal, denro de cada arquivo tem a descriacao de o que ele deve fazer.
+
+
+Voce deve ler TODOS os arquivo dentro de _old/ entender o código por completo e depois ler todos os arquivos aqui no dir principal e depois de ler tudo, montar uma estrategia de refatoramento, pode dividir em varios e varios passos para fazer tudo corretamente, sem trazer problemas de compatibilidade. 
+
+Siga os principios dentro do help/arquitecture.md para refatorar o codigo e criar ele corretamente. popule novamente o help/arquitexture.md com a nova estrategia de refatoramento e a nova estrutura de arquivos e preencha o que falta ali, ele deve servir como uma "cola" futura para os prompts da ai nao desviarem ela da identidade inicial do projeto e minimizar bus e maximizar a eficiencia do codigo, ele deve sempre ser olhado, a cada novo prompt depois do refatoramento, será a nossa "biblia" com os mandamentos estruturais e filosoficos do código, quero que o help/Teory.txt, tenha o mesmo intuito, ele é o nosso "livro sagrado" que nos ajuda a entender o que o codigo deve fazer e como ele deve ser feito, sao as teorias imutaveis que devem ser respeitadas a nao ser que seja pedido ao contrario pelo prompt, tipo pivotar de estrategia e etc.
+
+Refaca esse README.md, e coloque de maneira extremamente minimalista, só o titulo do projeto, como baixar o venv e como rodar e a estrutura de arquivos.
+
+Todos os arquivos tem os seus prompts escritos por mim devem ter o seu texto substituido por código de verdade, mas quero que voce crie dentro de help, um arquivo com cada um dos prompr que foi escrito só pra eu nao perder, pode ir colocando por ordem de importacia, quero um arquivo prompt.txt que dentro dele tem um log de todos os propts que eu escrevi, exemplo:
+
+-----------------------
+
+NOME DO ARQUIVO:
+
+prompt: 
+"""
+*aqui deve ter a cópia exata, palavra por palavra dos prompts
+"""
+
+-----------------------
+
+
+... e assim vai pra cada arquivo. 
+
+
+Faça esse "backup" dos prompts logo depois que ler todos os aruqivos, depois pode comecar a apagar eles e substituir por código útil. Como sempre é muito importante resaltar os mandamentos estruturais e filosoficos do código, para que ele não se perca em algum momento, no help/Architecture.md e o help/Teory.txt, que devem ser respeitados a nao ser que seja pedido ao contrario pelo prompt, tipo pivotar de estrategia e etc.
+
+só pra deixar claro, sobre como rodar, as configuracoes vao ser strings definidas no comeco de cada codigo de uma maneira intuitiva que é só abrir o código e a pessoa vai entender pq vai dar de cara com a strings que estao com a explicação do que cada uma faz do lado, e dai é só rodar aquele arquivo "seco" no terminal.
+
+Se eu errei ortografia no nome de algum arquivo pode renomear.
+
+Se tiver alguma duvida me pergunte, nao quero que tenha nada ambiguo, sei que pode ter passado algo despercebido aqui, entao leia todos os arquivos na nova estrutura com os prompts e TODOS os arquivos da estrutura antiga, e depois venha tirar duvidas, procure bem as respostas antes de perguntar para minimizar o numero de interecoes que temos antes do refatoramento, quero ser eficiente, mas pode demorar bastante com o codigo diviidindo em varios passos. 
+
+Não rode nenhum código, só crie essa nova estrutura.
+"""
+
+-----------------------
+
+ARQUIVO: Code/src/Download.py
+
+prompt: 
+"""
+# Aqui vai toda a burocracia dos downloads
+"""
+
+-----------------------
+
+ARQUIVO: Code/src/DataManipulation.py
+
+prompt: 
+"""
+# Aqui deve ficar toda a manipulacao de dados desnecessaria do arquivos de analise e de backtest para deixar a alogica abstraida no código lá e parecer só um fluxograma(que o leitor consegue entender a pipeline e entender inputs /outputs) em que o código e a sintax de verdade estão todos aqui denrto
+"""
+
+-----------------------
+
+ARQUIVO: Code/src/Model.py
+
+prompt: 
+"""
+# Tudo do modelo deve ser definido aqui
+"""
+
+-----------------------
+
+ARQUIVO: Code/src/TradingStrategy.py
+
+prompt: 
+"""
+# Tudo do trading strategy deve ser feito aqui,para ser apemas chamado no código de backtesting
+"""
+
+-----------------------
+
+ARQUIVO: Code/analysis.py
+
+prompt: 
+"""
+Esse código deve gerar toda a analise dos dados gerados pelo backtest, deve ter como input o id do dataset que ele vai analiser e deve crair dentro da pasta Analysis, uma sib dir com o nome do id que vamos analisar,ela olha os dados processados do id e gera varios graficos, quero que ela tenha uma subpasta que gera um grafico pra predicao de cada dia que o modelo preveu, com a curva do modelo e a curva do mercado no futuro(tambem quero uma ultima curva ou scatter points, algo do tipo, que mostre qual era o preço de cada um dos tenores naquele dia, ou seja no dia que foi feita a predição, o mercado tambem tinha a sua "predicao do futuro", que é o preco dos futures naquele dia, quero compara isso com o preco futuro do mercado e o nosso modelo), no passado mostra apenas os dados reais, na pasta vai ter um arquivo .png com a imagem do grafico par cada dia.
+
+tambem gere outra pasta com o feedback final de backtest do modelo, um grafico do valor da nossa carteira e compara com a taxa tipo cid, que nao sei qual o nome, dos estados unidos, e compare com a estrategia de buy and hold que seria o 'jeito mais burro de investir' mas que acompanha o desempenho do mercado e é um bom parametro pra comparar o desempenho do modelo com o vies do mercado,. 
+
+dentro dessa segunda grande pasta com essa imagem do desempenho, quero que voce coloque o valor dos parametros do modelo em cada dia em um grafico, junto com o valor do mercado, assim da pra ver como o modelo se comportou em cada dia e como ele se comportou em relação ao mercado
+
+E também crie uma nova grande pasta(agora sao 3), com a comparacao por tenores, dentro dela vai ter uma pasta por tenor e pra cada um, quero ver um grafico falando dessa comparacao geral de lucro mas só pra esse tenor, tambem quero um grafico com a curva do mercado  e nossas decisoes de compra e venda, em cima do grafico, com as nossas decisoes a amostra. NEsses graficos das decisoes de venda quero que tenha um grafico na mesma imagem, a baixo desse e no eixo x o tempo e no eixo y uma relacao do valor do nosso modelo comparado com o valor que o mercado está precificando aquele future. formula: (nosso preco - preco mercado) / preco mercado, entao ele vai ficar negativo se o mercado esta precificando demais e positivo se estiver subvalorizado.
+
+
+Se tem alguma analise que deve ser fefita e está faltando crie uma nova pasta e chame de outros e coloque tudo lá.
+
+Se eu esqueci de pedir algum dado(util para essa analise) na geracao do backtest, pode colocar ele lá para poder chamar aqui.
+"""
+
+-----------------------
+
+ARQUIVO: Code/download.py
+
+prompt: 
+"""
+Aqui ele só deve baixar os dados pedidos
+
+input : {
+
+# Falar quais os inputs aqui, mas deve ser apenas strings que definem qual o dado que será salvo tipo data e etc, as strings devem ser escreitas no começõ do código e para rodar é só fazer o "python download.py"
+
+}
+
+output : {
+
+# Fale que tem um print minimalista no terminal e guarda os arquivos na pasta data/raw/{id_especificado_nos_inputs}. ai dentro desta pasta raw, o progrma salva tudo que precisamos nessa pasta  para o fluxo com a estrutura padronizada
+
+}
+
+# O código deve ser simples e só ter a logica geral de chmar pouquissimas funcoes que da pra entender como os dados estão sendo manipulados(quase como seria num fluxograma), a sintax de verdade está no Download.py que deve ter suas funções importadas aqui
+"""
+
+-----------------------
+
+ARQUIVO: Code/backtest.py
+
+prompt: 
+"""
+Aqui é o fluco principal do código, praticanebte sempre rodaremos aqui
+
+input : { # Devem ser strings definidas no inicio do código, do lado de cada string deve ter "# uma explicacao de o que ela faz"
+
+dataset que será usado, # O nome/id da pasta do raw que vamos usar (nome que criamos no arquivo de dowload, o modelo apenas usara os dados de lá aqui)
+start date de dados passados, # O modelo vai ser calibrado para o seu primeiro dia de testes com dados que comecao nessa data
+start date de testes, # O modelo vai comecar a testar a partir dessa data(só com os dados dos dias que já passaram para calibrar o parametros)
+end date de testes,  # O modelo vai testar todos os dias até chegar aqui
+
+
+}
+
+output : {
+
+# Fale que tem um print minimalista no terminal para mostrar o status do código
+# e guarda os arquivos na pasta data/processed/{id_especificado_nos_inputs # mesmo id do nome do dataset escolhido}. 
+
+}
+
+O código vai testar o modelo pra cada dia e testar o training stretegy também(que também usa a previsao do modelo). Para cada dia do teste ele vai crair uma pasta, dentro da pasta designada para o outpus do código, com a data do dia no nome da sub pasta. Dentro desta subpasta deve ter todos os logs do dias, em quantos arquivos forem necessarios, os dados aqui vao ser usados para a analise e ela deve ter acesso a tudo que o código fez nao só variaveis finais de lucro e etc, então eu quero que voce coloque tudo que puder ser util pra qualquere tipo de analise aqui(como demora muito pra rodar o código nao quero que fique faltando nada aqui pra na hora da analise eu descobrir que preciso rodar o código de novo). Mas as principais que eu quero é uma subpasta com as predicoes do modelo futuras e com os dados futuros do modelo(com todos os dados anteriores ao inicio daquela data também, a ideia é eu poder gerear um grafico para cada dia com a predicao do modelo, mas isso será na analise, estou explicando só pra vc entender a nocao gral do projeto) gostaria que tivesse o vetor de decisao do modelo de treinamento naquele dia também, E agora voltando para o diretorio geral de output, a gente vai ter essaas pastas com dados de cada dia e vai ter uma subpasta principal que vai ter o log do desempenho geral do método, e como nas outras pastas, quero que tenha todos os tipos da dados aqui para poder fazer a analise, como por exemplo o valor da nossa carteira em cada dia, quais foram os comandos de venda e compra e hold de cada dia e etc, deixe tudo bem documentado nos comentarios do código pra nao ser dificil mexer com a estrutura depois na analise
+
+Os arquivos que sao guardados aqui 
+
+# O código deve ser simples e só ter a logica geral de chmar pouquissimas funcoes que da pra entender como os dados estão sendo manipulados(quase como seria num fluxograma), a sintax de verdade está nos arquivos no src/ que deve ter suas funções importadas aqui
+"""
+
+-----------------------
+
+FIM DO BACKUP DOS PROMPTS ORIGINAIS

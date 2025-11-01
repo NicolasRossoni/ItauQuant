@@ -1,0 +1,396 @@
+===========================================
+LIVRO SAGRADO DAS TEORIAS - TEORY.TXT
+===========================================
+
+**ATENÇÃO**: Este é o LIVRO SAGRADO das teorias matemáticas do projeto.
+**NUNCA ALTERE** este arquivo sem extrema necessidade e justificativa.
+
+Este documento contém TODAS as teorias matemáticas imutáveis que devem ser 
+respeitadas na implementação do código, exceto quando explicitamente solicitado
+para pivotar estratégia.
+
+REGRAS SAGRADAS:
+1. Toda implementação DEVE seguir exatamente as fórmulas aqui descritas
+2. Os parâmetros do modelo seguem EXATAMENTE a notação definida aqui
+3. As equações são DEFINITIVAS - não podem ser "melhoradas" sem ordem explícita
+4. Este documento é a REFERÊNCIA FINAL para qualquer dúvida teórica
+
+CONTEÚDO:
+- Modelo de Dois Fatores de Schwartz-Smith (completo)
+- Filtro de Kalman como ferramenta
+- Fórmulas fechadas dos forwards
+- Estratégia de trading baseada em mispricing
+- Fluxogramas de implementação
+
+===========================================
+
+This is the LaTeX code of the file describing the hole base of the the problem(everything but backtesting), it must be used as context and reference for the code:
+
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{amsmath, amsfonts, amssymb}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,shapes.misc}
+\usepackage{adjustbox}
+
+\title{Documento Principal do Projeto\\
+Modelo de Dois Fatores de Schwartz--Smith,\\
+Kalman (como ferramenta), Inferência do Forward e Estratégia de Trading}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Teoria do Modelo de Dois Fatores (Schwartz--Smith)}
+
+\subsection*{Princípios e ideias centrais}
+Modelamos o \textbf{log-preço spot} $S_t$ de uma commodity como a soma de dois fatores estocásticos:
+\[
+\ln S_t = X_t + Y_t,
+\]
+onde:
+\begin{itemize}
+  \item $X_t$ é o \textbf{componente de curto prazo} (desvio transitório com \emph{reversão à média} para 0);
+  \item $Y_t$ é o \textbf{componente de longo prazo} (nível de equilíbrio, um passeio aleatório com deriva).
+\end{itemize}
+Assim, o preço \emph{observado} pode estar temporariamente acima/abaixo do nível de equilíbrio ($X_t$), enquanto o próprio equilíbrio ($Y_t$) pode se deslocar ao longo do tempo.
+
+\subsection*{Equações diferenciais estocásticas (SDEs)}
+A dinâmica contínua é:
+\begin{align}
+dX_t &= -\kappa\,X_t\,dt + \sigma_X\,dW^X_t, \label{eq:X}\\
+dY_t &= \mu\,dt + \sigma_Y\,dW^Y_t, \label{eq:Y}\\
+S_t &= \exp\!\big(X_t + Y_t\big), \label{eq:S}
+\end{align}
+com $dW^X_t$ e $dW^Y_t$ movimentos Brownianos (possivelmente correlacionados, $\mathrm{Corr}(dW^X_t,dW^Y_t)=\rho$). Os parâmetros são:
+\begin{itemize}
+  \item $\kappa>0$: velocidade de reversão de $X_t$ para 0;
+  \item $\sigma_X,\sigma_Y>0$: volatilidades dos fatores curto e longo;
+  \item $\mu$: deriva do fator de longo prazo $Y_t$;
+  \item $\rho\in[-1,1]$: correlação instantânea entre choques de $X$ e $Y$.
+\end{itemize}
+
+\subsection*{Soluções condicionais e estatísticas úteis}
+Para $X_t$ (processo de Ornstein--Uhlenbeck):
+\[
+X_T = X_t e^{-\kappa (T-t)} + \sigma_X \int_t^T e^{-\kappa (T-s)}\,dW^X_s,
+\]
+logo, com $\Delta:=T-t$,
+\[
+\mathbb{E}[X_T\mid X_t] = X_t e^{-\kappa \Delta},\qquad
+\mathrm{Var}[X_T\mid X_t] = \frac{\sigma_X^2}{2\kappa}\big(1-e^{-2\kappa \Delta}\big).
+\]
+Para $Y_t$ (Browniano aritmético com deriva):
+\[
+Y_T = Y_t + \mu\,\Delta + \sigma_Y (W^Y_T-W^Y_t),\quad
+\mathbb{E}[Y_T\mid Y_t]=Y_t+\mu\Delta,\quad
+\mathrm{Var}[Y_T\mid Y_t]=\sigma_Y^2\Delta.
+\]
+A covariância condicional é
+\[
+\mathrm{Cov}[X_T,Y_T\mid X_t,Y_t] = \rho\,\sigma_X\sigma_Y\,\frac{1-e^{-\kappa \Delta}}{\kappa}.
+\]
+
+\paragraph{Nota rápida sobre a notação condicional.}
+Expressões como $\mathbb{E}[X_T\mid X_t]$ e $\mathrm{Var}[X_T\mid X_t]$ significam, respectivamente, \textbf{média} e \textbf{variância} de $X_T$ \emph{condicionadas} ao valor conhecido de $X_t$ no tempo $t$. Lê-se “a expectativa de $X_T$ dado (sabendo) $X_t$”. É uma forma padrão de explicitar que estamos tratando a incerteza futura levando em conta a \emph{informação disponível} no presente.
+
+\subsection*{Forward \texorpdfstring{$F(t,T)$}{F(t,T)} (expressão fechada)}
+Sob medida neutra ao risco,
+\[
+F(t,T)=\mathbb{E}[S_T\mid\mathcal{F}_t]=\mathbb{E}\!\big[\exp(X_T+Y_T)\mid X_t,Y_t\big].
+\]
+Como $U:=X_T+Y_T$ é normal condicionalmente a $(X_t,Y_t)$, vale $\mathbb{E}[e^U]=\exp\!\big(\mathbb{E}[U]+\tfrac12\mathrm{Var}(U)\big)$. Combinando as médias/variâncias acima (com $\Delta=T-t$),
+\[
+\boxed{\;
+F(t,T)=\exp\!\Big(
+X_t e^{-\kappa\Delta} + Y_t + \mu\Delta
++\tfrac12\Big[
+\tfrac{\sigma_X^2}{2\kappa}\big(1-e^{-2\kappa\Delta}\big)
++\sigma_Y^2\Delta
++2\rho\,\sigma_X\sigma_Y\,\tfrac{1-e^{-\kappa\Delta}}{\kappa}
+\Big]
+\Big)\; }.
+\]
+Para prazos longos ($\Delta$ grande), o termo $e^{-\kappa\Delta}$ se anula e o forward reflete sobretudo $Y_t$ e a variância/deriva de longo prazo.
+
+\section{Filtro de Kalman (visão-ferramenta)}
+
+\subsection*{Uso conceitual}
+Veremos o KF como uma \textbf{ferramenta} para:
+\begin{itemize}
+  \item estimar \emph{estados latentes} $\{\hat X_t,\hat Y_t\}$ recursivamente;
+  \item ajustar \emph{parâmetros} $\Theta=\{\kappa,\sigma_X,\sigma_Y,\rho,\mu\}$ via MLE ou EM.
+\end{itemize}
+A modelagem é linear-gaussiana em espaço de estados: transição para $[X\ Y]^\top$ a cada $\Delta t$ e observações (spot e/ou $\ln F_{\text{mkt}}(t,T_i)$) lineares nos estados. A seção de \emph{fluxograma} a seguir assume o uso de uma \textbf{biblioteca Python de espaço de estados} com KF e estimação por \textbf{MLE} (p.\,ex., \texttt{statsmodels.tsa.statespace}) e/ou \textbf{EM} (p.\,ex., \texttt{pykalman}) como \emph{bloco fechado}, encapsulada em um \texttt{KalmanEngine}.
+
+\section{Fluxograma — Inferência de \texorpdfstring{$F(t^\ast,T)$}{F(t*,T)} via \texttt{KalmanEngine} (bloco fechado)}
+
+\subsection*{O que esta ferramenta faz}
+Dado histórico até um instante $t^\ast$ e um conjunto de maturidades $\{T_i\}_{i=1}^M$, a \texttt{KalmanEngine}:
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+  \item recebe \textbf{arrays} padronizados (preparados) de observações e prazos;
+  \item ajusta $\Theta$ por \emph{MLE} (ou \emph{EM});
+  \item filtra/suaviza estados e retorna $(\hat X_{t^\ast},\hat Y_{t^\ast})$;
+  \item calcula o vetor $F_{\text{modelo}}(t^\ast,T_i)$ usando a expressão fechada.
+\end{enumerate}
+
+\subsection*{Especificação dos \emph{inputs} (formatos)}
+Considere $t=0,1,\dots,T{-}1$ como datas úteis (ordenadas) e $i=1,\dots,M$ como \emph{tenores} ou \emph{maturidades} fixas.
+\begin{itemize}
+  \item \texttt{time}: vetor de datas (tamanho $T$).
+  \item \texttt{F\_mkt}: matriz $T\times M$ com os \textbf{settlements} (preços a termo) alinhados por \emph{tenor} (não por código de contrato). Cada coluna é um tenor, cada linha é uma data.
+  \item \texttt{ttm}: matriz $T\times M$ com $\Delta_{t,i}=\text{time-to-maturity em anos}$ do tenor $i$ na data $t$.
+  \item \texttt{S} (opcional): vetor $T\times 1$ com spot (ou proxy), se disponível.
+  \item \texttt{mask} (opcional): matriz booleana $T\times M$ indicando \emph{faltantes} em \texttt{F\_mkt}.
+  \item \texttt{cfg}: dicionário de configuração com:
+  \begin{itemize}
+    \item \texttt{method} $\in\{$\texttt{"MLE"}, \texttt{"EM"}$\}$;
+    \item chutes iniciais de $\Theta$ (opcional);
+    \item \texttt{R} (ruído de medição): escalar ou matriz diagonal por observável (pode ser \emph{autoestimado} pela engine).
+  \end{itemize}
+\end{itemize}
+\textbf{Tamanhos}: \texttt{F\_mkt} e \texttt{ttm} são $[T,M]$; \texttt{S} é $[T]$; $t^\ast$ é um índice ou data dentro de \texttt{time}.
+
+\subsection*{Especificação dos \emph{outputs} (formatos)}
+\begin{itemize}
+  \item \texttt{Theta}: tupla/dict com $\{\kappa,\sigma_X,\sigma_Y,\rho,\mu\}$.
+  \item \texttt{state\_t}: vetor $[2]$ com $(\hat X_{t^\ast},\hat Y_{t^\ast})$.
+  \item \texttt{state\_path} (opcional): matriz $T\times 2$ com a trajetória filtrada/suavizada.
+  \item \texttt{F\_model\_t}: vetor $[M]$ com $F_{\text{modelo}}(t^\ast,T_i)$ para todos os tenores carregados.
+  \item \texttt{F\_model\_path} (opcional): matriz $T\times M$ com $F_{\text{modelo}}(t,T_i)$ ao longo do histórico.
+\end{itemize}
+
+\subsection*{Pré-processamento mínimo antes da \texttt{KalmanEngine}}
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Mapeamento de tenores}: para cada data, mapear contratos listados para um \emph{grid fixo} de tenores $\{T_i\}$; preencher \texttt{F\_mkt}[t,i] e \texttt{ttm}[t,i].
+  \item \textbf{Limpeza}: remover valores inválidos; manter \texttt{mask} para faltantes.
+  \item \textbf{Coerência}: \texttt{ttm} positiva e decrescente com o calendário; usar convenção ACT/365 (ou outra \emph{fixa}).
+\end{enumerate}
+
+\subsection*{Fluxograma (engine como caixa-preta)}
+\begin{center}
+\begin{adjustbox}{max width=\linewidth}
+\begin{tikzpicture}[
+  node distance=8mm,
+  every node/.style={font=\small},
+  proc/.style={rectangle, rounded corners, draw, align=center, minimum height=6mm, inner sep=3pt, text width=58mm},
+  startstop/.style={ellipse, draw, align=center, inner sep=3pt, minimum height=6mm},
+  io/.style={rectangle, draw, align=center, inner sep=3pt, text width=58mm},
+  >={Stealth[length=2mm]}
+]
+% --- Nós ---
+\node[startstop] (start) {Dados prontos até $t^\ast$\\ F\_mkt $[T\times M]$, ttm $[T\times M]$, $S[T]$ (opcional)};
+\node[proc, below=of start] (cfg) {Escolher \texttt{method} $\in \{\texttt{MLE},\ \texttt{EM}\}$\\ e (opcional) chutes de $\Theta$ e $R$};
+\node[proc, below=of cfg] (fit) {\textbf{KalmanEngine.fit()}\\ Ajuste de $\Theta$ por MLE/EM; filtro/smoother};
+\node[proc, below=of fit] (state) {Extrair $(\hat X_{t^\ast},\hat Y_{t^\ast})$\\ (opcional: trajetória $T\times 2$)};
+\node[proc, below=of state] (fcalc) {Calcular $F_{\text{modelo}}(t^\ast,T_i)$ pela fórmula fechada\\ para $i=1,\dots,M$};
+\node[io, below=of fcalc] (out) {Saídas: $\Theta$, \texttt{state\_t} $[2]$, \texttt{F\_model\_t} $[M]$\\ (opcionais: \texttt{state\_path}, \texttt{F\_model\_path})};
+
+% --- Setas ---
+\draw[->] (start) -- (cfg);
+\draw[->] (cfg) -- (fit);
+\draw[->] (fit) -- (state);
+\draw[->] (state) -- (fcalc);
+\draw[->] (fcalc) -- (out);
+\end{tikzpicture}
+\end{adjustbox}
+\end{center}
+
+
+
+\section{Estratégia de Trading (como função/caixa-preta)}
+
+\subsection*{Ideia operacional}
+Transformar o desvio entre o forward do \emph{modelo} e o de \emph{mercado} em \textbf{ordens explícitas} para uso direto em backtesting:
+\[
+\Delta(t,T_i):=F_{\text{modelo}}(t,T_i)-F_{\text{mkt}}(t,T_i).
+\]
+Padronizamos por risco a termo (ou erro-padrão do modelo) para obter \emph{z-scores}. A função aplica \textbf{limiares de entrada/saída} (banda de inação), dimensiona posições com \emph{vol-target} ou \emph{QP mean--variance} e retorna \textbf{ordens} bem definidas.
+
+\subsection*{Especificação dos \emph{inputs} (formatos)}
+Considere um único tempo $t$ (aplicável \emph{rolling} ao longo do histórico):
+\begin{itemize}
+  \item \texttt{F\_model\_t}: vetor $[M]$ com $F_{\text{modelo}}(t,T_i)$.
+  \item \texttt{F\_mkt\_t}: vetor $[M]$ com $F_{\text{mkt}}(t,T_i)$ (mesmos tenores).
+  \item \texttt{risk}: matriz $\Sigma$ $[M{\times}M]$ de covariâncias dos retornos dos futuros (estimada por janela).
+  \item \texttt{limits}: parâmetros operacionais (alavancagem, limites por tenor, \emph{position caps}).
+  \item \texttt{thresh}: limiares $z_{\text{in}}$ e $z_{\text{out}}$ (histerese).
+  \item \texttt{sizing}: \{ \texttt{"vol\_target"} com \texttt{vol\_target}, \; \texttt{"qp"} com $\gamma,\lambda_1,\lambda_2$ \}.
+  \item \texttt{topK} (opcional): número máximo de tenores a operar por decisão (seleção pelos maiores $|\text{z-score}|$).
+  \item \texttt{w\_prev} (opcional): vetor $[M]$ com posições vigentes (para custos de troca no caso \texttt{"qp"}).
+\end{itemize}
+
+\subsection*{Especificação dos \emph{outputs} (formatos)}
+\begin{itemize}
+  \item \texttt{signals}: vetor $[M]$ em $\{-1,0,+1\}$ (vender, nada, comprar) por tenor.
+  \item \texttt{target\_w}: vetor $[M]$ com posições-alvo normalizadas (após sizing e limites).
+  \item \texttt{orders}: \emph{lista} de estruturas do tipo \texttt{(tenor\_id, side, size)} para execução no backtest. Pode ser derivada de $\Delta w=\texttt{target\_w}-\texttt{w\_prev}$.
+\end{itemize}
+Observação: ao rodar \emph{rolling}, agregamos \texttt{signals} em uma matriz $[T{\times}M]$ e \texttt{orders} em uma lista de listas (uma por tempo).
+
+\subsection*{Fluxograma — \texttt{TradeEngine} (caixa-preta)}
+\begin{center}
+\begin{adjustbox}{max width=\linewidth}
+\begin{tikzpicture}[
+  node distance=6mm and 10mm,
+  every node/.style={font=\small},
+  proc/.style={rectangle,rounded corners,draw,align=center,minimum height=6mm,inner sep=3pt,text width=56mm},
+  startstop/.style={ellipse,draw,align=center,inner sep=3pt},
+  io/.style={rectangle,draw,align=center,inner sep=3pt,text width=56mm},
+  decision/.style={diamond,draw,aspect=1.6,align=center,inner sep=1.5pt,text width=30mm},
+  >={Stealth[length=2mm]}
+]
+\node[startstop] (start) {Inputs em $t$: \texttt{F\_model\_t[$M$]}, \texttt{F\_mkt\_t[$M$]}, $\Sigma[M{\times}M]$, \texttt{limits}, \texttt{thresh}, \texttt{sizing}};
+\node[proc, below=of start] (z) {Calcular $\Delta_i$ e z-scores por tenor; aplicar \texttt{topK} por $|\text{z}|$};
+\node[decision, below=of z] (enter) {$|\text{z}|>z_{\text{in}}$ em algum tenor?};
+\node[proc, below=of enter] (size) {Dimensionar alvos (\texttt{"vol\_target"} ou \texttt{"qp"}) e aplicar limites};
+\node[proc, below=of size] (orders) {Construir \texttt{signals} $[-1,0,+1]$, \texttt{target\_w} e \texttt{orders} (a partir de $\Delta w$)};
+\node[proc, right=22mm of enter] (hold) {Histerese: se $|\text{z}|<z_{\text{out}}$, reduzir/fechar posições};
+\node[io, below=of orders] (out) {Outputs: \texttt{signals[$M$]}, \texttt{target\_w[$M$]}, \texttt{orders} (lista)};
+
+\draw[->] (start) -- (z);
+\draw[->] (z) -- (enter);
+\draw[->] (enter) -- node[left]{sim} (size);
+\draw[->] (size) -- (orders);
+\draw[->] (orders) -- (out);
+\draw[->] (enter) -- node[above]{não} (hold);
+\draw[->] (hold) |- (out);
+\end{tikzpicture}
+\end{adjustbox}
+\end{center}
+
+\paragraph{Comportamento esperado do output.}
+Para cada $t$, \texttt{orders} é uma lista de instruções claras (tenor, lado, tamanho). Se for preferível ao backtester, também é possível consumir diretamente \texttt{target\_w} (posições alvo) ou \texttt{signals} (sinais discretos).
+
+\section{Arquitetura do Código — Fluxograma Geral (módulos e I/O)}
+
+\paragraph{Propósito.}
+Esta seção organiza todo o pipeline em \textbf{blocos modulares} com contratos claros de \emph{entrada/saída} (I/O), para que o \texttt{main.py} possa orquestrar o processo sem expor detalhes matemáticos internos. A ideia é plugar três caixas–pretas: (i) inferência do forward teórico do modelo, (ii) preparação dos insumos de risco/limites para trading e (iii) motor de decisão (Trade Engine) que retorna ordens.
+
+\subsection*{Entradas e saídas (nível do programa)}
+\begin{itemize}
+  \item \textbf{Entradas globais (dados no tempo $1{:}T$):}
+    \begin{itemize}
+      \item \texttt{F\_mkt} $[T\times M]$: matriz de preços de futuros observados, uma linha por data, uma coluna por maturidade.
+      \item \texttt{ttm} $[T\times M]$: time-to-maturity (em anos) correspondente a cada célula de \texttt{F\_mkt}.
+      \item \texttt{S} $[T]$ (opcional): spot histórico (se disponível).
+      \item \texttt{cost} $[M]$: custo por contrato (tick/fee) para execução.
+      \item \texttt{cfg}: configurações (janelas de cálculo, método de ajuste \texttt{MLE}/\texttt{EM}, limites padrão etc.).
+    \end{itemize}
+  \item \textbf{Saída final (no instante $t^\ast$ selecionado):}
+    \begin{itemize}
+      \item \texttt{orders\_t}: lista estruturada de ordens no tempo $t^\ast$ (por exemplo, tuplas \texttt{(maturity\_idx, side, qty)}), já respeitando custos, limites e restrições.
+    \end{itemize}
+\end{itemize}
+
+\subsection*{Blocos (contratos I/O)}
+\paragraph{\texttt{ComputeModelForward()}.}
+\emph{Função caixa–preta que usa a engine de Kalman (MLE/EM) + fórmula fechada do modelo.}
+\begin{itemize}
+  \item \textbf{Input:} \texttt{F\_mkt} $[T\times M]$, \texttt{ttm} $[T\times M]$, \texttt{S} $[T]$ (opc.), \texttt{cfg.method}$\in\{\texttt{MLE},\texttt{EM}\}$, chutes iniciais (opcionais) de $\Theta$.
+  \item \textbf{Output (no $t^\ast$):} 
+  \begin{itemize}
+    \item \texttt{Theta}: parâmetros calibrados do modelo.
+    \item \texttt{state\_t} $[2]$: estado filtrado $(\hat X_{t^\ast},\hat Y_{t^\ast})$.
+    \item \texttt{F\_model\_t} $[M]$: vetor do forward teórico $F_{\text{modelo}}(t^\ast,T_i)$, $i=1{:}M$.
+    \item (\emph{opcional}) \texttt{state\_path} $[T\times 2]$, \texttt{F\_model\_path} $[T\times M]$.
+  \end{itemize}
+\end{itemize}
+
+\paragraph{\texttt{PrepareTradingInputs()}.}
+\emph{Pré-processa insumos para o motor de decisão.}
+\begin{itemize}
+  \item \textbf{Input (no $t^\ast$):} \texttt{F\_mkt\_t} $[M]$ (linha $t^\ast$ de \texttt{F\_mkt}), \texttt{F\_model\_t} $[M]$, \texttt{ttm\_t} $[M]$, \texttt{cost} $[M]$, \texttt{cfg}.
+  \item \textbf{Output:}
+  \begin{itemize}
+    \item \texttt{mispricing} $[M]$: vetor $\Delta F = F_{\text{modelo}}(t^\ast,\cdot)-F_{\text{mkt}}(t^\ast,\cdot)$.
+    \item \texttt{Sigma} $[M\times M]$: matriz de risco/covariância (estimada via janela rolling de retornos de futuros ou do erro de modelo).
+    \item \texttt{limits} $[M]$: limites por maturidade (posição máxima, notional, VaR aproximado etc.).
+    \item \texttt{thresh} $[M]$: limiares mínimos de desvio (em preço ou em Z-score) para acionar ordens.
+    \item \texttt{frictions}: estrutura com custos efetivos (tick/fee/slippage) agregados.
+  \end{itemize}
+\end{itemize}
+
+\paragraph{\texttt{TradeEngine()}.}
+\emph{Gera decisões táticas a partir de desvio/risco/limites.}
+\begin{itemize}
+  \item \textbf{Input (no $t^\ast$):} \texttt{mispricing} $[M]$, \texttt{Sigma} $[M\times M]$, \texttt{limits} $[M]$, \texttt{thresh} $[M]$, \texttt{frictions}.
+  \item \textbf{Output:} \texttt{orders\_t}: lista de ordens (por maturidade) com \texttt{side} $\in\{\texttt{BUY},\texttt{SELL}\}$ e \texttt{qty} viável (respeitando risco/limites/custos).
+\end{itemize}
+
+\subsection*{Fluxograma (visão fim-a-fim)}
+\begin{center}
+\begin{adjustbox}{max width=\linewidth}
+\begin{tikzpicture}[
+  node distance=8mm,
+  every node/.style={font=\small},
+  proc/.style={rectangle, rounded corners, draw, align=center, minimum height=6mm, inner sep=3pt, text width=60mm},
+  startstop/.style={ellipse, draw, align=center, inner sep=3pt, minimum height=6mm},
+  io/.style={rectangle, draw, align=center, inner sep=3pt, text width=60mm},
+  >={Stealth[length=2mm]}
+]
+% --- nós ---
+\node[startstop] (in) {Entradas globais\\
+\texttt{F\_mkt} $[T\times M]$, \texttt{ttm} $[T\times M]$, \texttt{S} $[T]$ (opc.),\\
+\texttt{cost} $[M]$, \texttt{cfg}, tempo alvo $t^\ast$};
+\node[proc, below=of in] (block1) {\textbf{ComputeModelForward()}\\
+Calibra $\Theta$ (MLE/EM), filtra estados e calcula\\
+$F_{\text{modelo}}(t^\ast,T_{1{:}M})$};
+\node[proc, below=of block1] (block2) {\textbf{PrepareTradingInputs()}\\
+Monta $\Delta F$, estima \texttt{Sigma}, define \texttt{limits}/\texttt{thresh}/\texttt{frictions}};
+\node[proc, below=of block2] (block3) {\textbf{TradeEngine()}\\
+Transforma desvio+riscos+limites em ordens exequíveis};
+\node[io, below=of block3] (out) {Saída no $t^\ast$: \texttt{orders\_t}\\
+(p.\,ex., lista de \texttt{(maturity\_idx, side, qty)})};
+
+% --- setas ---
+\draw[->] (in) -- (block1);
+\draw[->] (block1) -- (block2);
+\draw[->] (block2) -- (block3);
+\draw[->] (block3) -- (out);
+\end{tikzpicture}
+\end{adjustbox}
+\end{center}
+
+\subsection*{Observações práticas}
+\begin{itemize}
+  \item O \texttt{main.py} apenas define o $t^\ast$, carrega dados e chama \texttt{ComputeModelForward} $\rightarrow$ \texttt{PrepareTradingInputs} $\rightarrow$ \texttt{TradeEngine}, persistindo \texttt{orders\_t}.
+  \item A matriz \texttt{Sigma} pode ser calculada com uma janela rolling (ex.: 60 dias) de retornos das séries de futuros por maturidade ou a partir dos resíduos \texttt{F\_mkt} $-$ \texttt{F\_model} para refletir risco de erro do modelo.
+  \item \texttt{limits} e \texttt{thresh} podem vir de \texttt{cfg} (valores fixos) ou ser derivados de métricas (p.\,ex., VaR aproximado com \texttt{Sigma}, P\&L por tick com \texttt{cost}).
+  \item \texttt{frictions} agrega custos fixos/lineares (fee, spread médio, slippage) a serem comparados ao benefício esperado do desvio.
+\end{itemize}
+
+
+\section{Dados e API (CME Group) — o que coletar e como usar}
+\subsection*{Universo e campos}
+\begin{itemize}
+  \item \textbf{Universo}: escolha uma família (ex.: WTI, Henry Hub, etc.) e um conjunto fixo de tenores $\{T_i\}_{i=1}^M$ a acompanhar.
+  \item \textbf{Campos por data/tenor}: \texttt{settlement\_price}, \texttt{expiration\_date}, \texttt{trade\_date}. Organizar por \emph{tenor} (não por símbolo específico).
+\end{itemize}
+
+\subsection*{Arranjos para as engines}
+\begin{itemize}
+  \item \texttt{F\_mkt[$T{\times}M$]} e \texttt{ttm[$T{\times}M$]} alimentam \texttt{KalmanEngine}.
+  \item Saídas \texttt{F\_model\_t[$M$]} e \texttt{F\_mkt\_t[$M$]} alimentam \texttt{TradeEngine}.
+\end{itemize}
+
+\bigskip
+\section*{Referências (links por conceito)}
+
+\begin{description}[leftmargin=0pt, labelindent=0pt, style=nextline, font=\normalfont]
+\item[Modelo de dois fatores (paper original)] \url{https://www.anderson.ucla.edu/faculty/eduardo.schwartz/articles/72.pdf}
+
+\item[Conceitos de forwards/futuros e precificação] \url{https://www.columbia.edu/~mh2078/FoundationsFE/for_swap_fut-options.pdf}
+
+\item[Introdução prática ao Filtro de Kalman] \url{https://www.cs.unc.edu/~welch/kalman/kalmanIntro.html}
+
+\item[Dados de mercado (CME Group)] \url{https://www.cmegroup.com/market-data.html}
+\end{description}
+
+\end{document}
