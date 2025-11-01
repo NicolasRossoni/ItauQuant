@@ -439,6 +439,138 @@ def create_time_series(
         return pd.DataFrame(data, index=dates, columns=columns)
 
 
+def load_data_from_raw(dataset_id: str) -> Dict[str, Union[pd.DataFrame, pd.Series]]:
+    """
+    Carrega dataset completo da pasta data/raw/.
+    
+    Parâmetros
+    ----------
+    dataset_id : str
+        ID do dataset a ser carregado.
+    
+    Retorna
+    -------
+    dict
+        Dados carregados com chaves 'F_mkt', 'ttm', 'S', 'costs', 'dates', 'tenors'.
+    
+    Exemplos
+    --------
+    >>> raw_data = load_data_from_raw("WTI_test_250d")
+    >>> print(f"Dados carregados: {raw_data['F_mkt'].shape}")
+    """
+    import os
+    
+    dataset_path = os.path.join("data/raw", dataset_id)
+    
+    if not os.path.exists(dataset_path):
+        raise FileNotFoundError(f"Dataset '{dataset_id}' não encontrado em data/raw/")
+    
+    # Carregar arquivos principais
+    F_mkt = pd.read_csv(os.path.join(dataset_path, "F_mkt.csv"), index_col=0, parse_dates=True)
+    ttm = pd.read_csv(os.path.join(dataset_path, "ttm.csv"), index_col=0, parse_dates=True)
+    
+    # Carregar S (opcional)
+    S_path = os.path.join(dataset_path, "S.csv")
+    if os.path.exists(S_path):
+        S = pd.read_csv(S_path, index_col=0, parse_dates=True).squeeze()
+    else:
+        S = F_mkt.iloc[:, 0].copy()  # Usar primeiro tenor como proxy
+    
+    # Carregar costs (opcional)
+    costs_path = os.path.join(dataset_path, "costs.csv")
+    if os.path.exists(costs_path):
+        costs_df = pd.read_csv(costs_path)
+        # Extrair apenas os valores tick_value como array
+        if 'tick_value' in costs_df.columns:
+            costs = costs_df['tick_value'].values
+        else:
+            costs = None
+    else:
+        costs = None
+    
+    return {
+        'F_mkt': F_mkt,
+        'ttm': ttm,
+        'S': S,
+        'costs': costs,
+        'dates': F_mkt.index,
+        'tenors': list(F_mkt.columns)
+    }
+
+
+def format_for_model(raw_data: Dict) -> Dict[str, pd.DataFrame]:
+    """
+    Formata dados brutos para uso no modelo Schwartz-Smith.
+    
+    Parâmetros
+    ----------
+    raw_data : dict
+        Dados brutos carregados via load_data_from_raw.
+    
+    Retorna
+    -------
+    dict
+        Dados formatados para o modelo.
+    """
+    return {
+        'F_mkt': raw_data['F_mkt'],
+        'ttm': raw_data['ttm'], 
+        'S': raw_data.get('S')
+    }
+
+
+def save_data_to_processed(results_data: Dict, dataset_id: str) -> str:
+    """
+    Salva resultados de backtesting na pasta data/processed/.
+    
+    Parâmetros
+    ----------
+    results_data : dict
+        Dados de resultado do backtesting.
+    dataset_id : str
+        ID do dataset.
+    
+    Retorna
+    -------
+    str
+        Caminho do diretório criado.
+    """
+    import os
+    import shutil
+    
+    # Criar pasta SEM timestamp (mesmo nome do raw)
+    output_dir = os.path.join("data/processed", dataset_id)
+    
+    # Remover se já existir
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Salvar DataFrames
+    if 'portfolio_performance' in results_data:
+        results_data['portfolio_performance'].to_csv(os.path.join(output_dir, "portfolio_performance.csv"))
+    
+    if 'trades_log' in results_data:
+        results_data['trades_log'].to_csv(os.path.join(output_dir, "trades_log.csv"))
+    
+    if 'model_evolution' in results_data:
+        results_data['model_evolution'].to_csv(os.path.join(output_dir, "model_evolution.csv"))
+    
+    # Salvar daily_results como JSON
+    if 'daily_results' in results_data:
+        import json
+        daily_results_path = os.path.join(output_dir, "daily_results")
+        os.makedirs(daily_results_path, exist_ok=True)
+        
+        for date_str, day_data in results_data['daily_results'].items():
+            day_file = os.path.join(daily_results_path, f"{date_str}.json")
+            with open(day_file, 'w') as f:
+                json.dump(day_data, f, indent=2, default=str)
+    
+    return output_dir
+
+
 def load_config(config_path: str = "config/default.yaml") -> dict:
     """
     Carrega configuração do arquivo YAML.
@@ -452,24 +584,60 @@ def load_config(config_path: str = "config/default.yaml") -> dict:
     -------
     dict
         Configurações carregadas.
-    
-    Exemplos
-    --------
-    >>> cfg = load_config()
-    >>> print(f"Método Kalman: {cfg['kalman']['method']}")
     """
-    if not os.path.exists(config_path):
-        logger.warning(f"Arquivo de config não encontrado: {config_path}. Usando defaults.")
-        return _get_default_config()
+    import yaml
+    import os
     
-    try:
-        with open(config_path, 'r') as f:
-            cfg = yaml.safe_load(f)
-        logger.info(f"Configuração carregada: {config_path}")
-        return cfg
-    except Exception as e:
-        logger.error(f"Erro ao carregar config: {e}. Usando defaults.")
-        return _get_default_config()
+    if not os.path.exists(config_path):
+        # Retornar configuração padrão se arquivo não existir
+        return {
+            'method': 'MLE',
+            'kalman': {
+                'max_iter': 200,
+                'tol': 1e-6,
+                'init_params': {
+                    'kappa': 1.0,
+                    'sigma_X': 0.3,
+                    'sigma_Y': 0.2,
+                    'rho': 0.3,
+                    'mu': 0.0
+                }
+            },
+            'sizing': {
+                'method': 'vol_target',
+                'vol_target': 0.10
+            },
+            'thresh': {
+                'z_in': 1.5,
+                'z_out': 0.5,
+                'topK': 4
+            },
+            'limits': {
+                'leverage': 3.0,
+                'per_tenor_cap': 0.3
+            }
+        }
+    
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+def format_for_analysis(data: Dict) -> Dict:
+    """
+    Formata dados para análise visual (placeholder).
+    
+    Parâmetros
+    ---------- 
+    data : dict
+        Dados brutos.
+        
+    Retorna
+    -------
+    dict
+        Dados formatados.
+    """
+    # Placeholder - será usado no analysis.py
+    return data
 
 
 def clean_data(

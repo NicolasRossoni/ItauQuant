@@ -1,0 +1,52 @@
+# Configuração padrão para o modelo Schwartz-Smith
+# Este arquivo contém os parâmetros técnicos padrão para o projeto ItauQuant
+
+# Configurações do Filtro de Kalman
+kalman:
+  method: "MLE"                    # Método de estimação: "MLE" ou "EM"
+  save_path: true                  # Se deve salvar caminhos completos dos estados
+  max_iter: 200                    # Máximo de iterações para convergência
+  tol: 1.0e-6                     # Tolerância para convergência
+  R: 0.01                          # Ruído de observação padrão
+  
+  # Parâmetros iniciais para otimização
+  init_params:
+    kappa: 1.0                     # Velocidade de reversão à média
+    sigma_X: 0.3                   # Volatilidade do fator de curto prazo
+    sigma_Y: 0.2                   # Volatilidade do fator de longo prazo
+    rho: 0.3                       # Correlação entre fatores
+    mu: 0.0                        # Deriva do fator de longo prazo
+
+# Configurações de risco
+risk:
+  source: "returns"                # Fonte para estimar covariância: "returns" ou "residuals"
+  lookback: 60                     # Janela histórica em dias
+  shrinkage: true                  # Usar shrinkage de Ledoit-Wolf
+
+# Configurações de dimensionamento de posições
+sizing:
+  method: "vol_target"             # Método: "vol_target" ou "qp"
+  vol_target: 0.10                 # Volatilidade alvo anual (10%)
+  
+  # Parâmetros para Quadratic Programming
+  qp:
+    gamma: 5.0                     # Aversão ao risco
+    lambda_l1: 0.0                 # Penalização L1 (sparsity)
+    lambda_turnover: 0.1           # Penalização de turnover
+
+# Limites de posição
+limits:
+  leverage: 3.0                    # Alavancagem máxima total
+  per_tenor_cap: 0.3               # Limite máximo por tenor (30%)
+
+# Limiares de entrada/saída
+thresh:
+  z_in: 1.5                        # Z-score para entrada
+  z_out: 0.5                       # Z-score para saída
+  topK: 4                          # Número máximo de tenores ativos
+
+# Custos de transação
+costs:
+  default_tick_value: 10.0         # Valor do tick padrão
+  default_fee: 2.0                 # Fee por contrato padrão
+  slippage: 0.0001                 # Slippage (1bp)

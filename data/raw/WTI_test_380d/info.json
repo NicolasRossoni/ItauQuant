@@ -1,0 +1,14 @@
+{
+  "source": "Yahoo Finance",
+  "symbol": "CL=F",
+  "start_date": "2023-07-01",
+  "end_date": "2024-12-31",
+  "num_tenors": 6,
+  "contango_monthly": 0.004,
+  "days_downloaded": 377,
+  "price_range": {
+    "min": 66.013,
+    "max": 95.9283203125,
+    "mean": 78.394384192105
+  }
+}

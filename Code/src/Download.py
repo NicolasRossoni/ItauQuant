@@ -106,7 +106,7 @@ def download_yahoo_wti(
         if df is None or df.empty:
             raise RuntimeError("CL=F não retornou dados válidos do Yahoo Finance")
         
-        spot_prices = df['Close'].dropna()
+        spot_prices = df['Close'].squeeze().dropna()  # squeeze() converte DataFrame para Series
         logger.info(f"✓ CL=F baixado: {len(spot_prices)} dias úteis")
         
     except Exception as e:
@@ -114,6 +114,10 @@ def download_yahoo_wti(
     
     # Criar estrutura de termo sintética
     logger.info("Criando estrutura de termo sintética...")
+    
+    # Verificar se temos dados válidos
+    if len(spot_prices) == 0:
+        raise ValueError("Nenhum preço spot válido obtido do Yahoo Finance")
     
     price_data = []
     ttm_data = []
@@ -125,7 +129,8 @@ def download_yahoo_wti(
         
         # Preço forward sintético com contango
         forward_prices = spot_prices * (1 + contango_monthly * i)
-        price_data.append(forward_prices)
+        forward_series = pd.Series(forward_prices, index=spot_prices.index, name=f'tenor_{i}')
+        price_data.append(forward_series)
         
         # TTM constante para cada tenor
         ttm_series = pd.Series(
@@ -138,17 +143,20 @@ def download_yahoo_wti(
         
         logger.info(f"  Tenor {i}: TTM={ttm_years:.2f} anos, "
                     f"contango={contango_monthly*i*100:.1f}%, "
-                    f"preço médio=${forward_prices.mean():.2f}")
+                    f"preço médio=${forward_series.mean():.2f}")
     
     # Consolidar DataFrames
-    F_mkt = pd.concat(price_data, axis=1)
+    if not price_data:
+        raise ValueError("Nenhum dado de preço foi criado")
+    
+    F_mkt = pd.concat(price_data, axis=1, keys=tenor_names)
     F_mkt.columns = tenor_names
     
-    ttm = pd.concat(ttm_data, axis=1)
+    ttm = pd.concat(ttm_data, axis=1, keys=tenor_names)  
     ttm.columns = tenor_names
     
-    # Spot como DataFrame
-    S = pd.DataFrame({'S': spot_prices})
+    # Spot como DataFrame (usar mesmo índice que F_mkt)
+    S = pd.DataFrame({'S': spot_prices}, index=spot_prices.index)
     
     # Remover linhas com NaN
     common_index = F_mkt.dropna().index
