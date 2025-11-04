@@ -1,6 +1,0 @@
-,date,tenor,side,quantity,price
-0,2011-06-01,tenor_1,BUY,0.3,102.7
-1,2012-01-04,tenor_1,SELL,0.6,102.96
-2,2012-01-05,tenor_1,BUY,0.6,103.22
-3,2012-07-02,tenor_1,SELL,0.6,84.96
-4,2012-07-03,tenor_1,BUY,0.6,83.75

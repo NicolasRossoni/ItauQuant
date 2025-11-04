@@ -1,0 +1,30 @@
+{
+  "model_params": {
+    "kappa": 6.7258882305079215,
+    "sigma_X": 0.03162277660168379,
+    "sigma_Y": 0.2718346247150884,
+    "rho": 0.9,
+    "mu": 0.1
+  },
+  "predictions": "[88.16801871 88.22843999]",
+  "trading_decisions": {
+    "signals_t1": "[-1.]",
+    "target_w_t1": "[-0.3  0. ]",
+    "orders_t1": [],
+    "signals_t2": "[-1.]",
+    "target_w_t2": "[ 0.  -0.3]",
+    "orders_t2": []
+  },
+  "market_data": {
+    "F_mkt_t": "tenor_1    88.52\ntenor_2    91.88\nName: 2023-09-13 00:00:00, dtype: float64",
+    "actual_F_mkt_t": "tenor_1    90.16\ntenor_2    93.70\nName: 2023-09-14 00:00:00, dtype: float64",
+    "ttm_t": "tenor_1    0.083333\ntenor_2    0.166667\nName: 2023-09-13 00:00:00, dtype: float64",
+    "mispricing": "[-0.35198129 -3.65156001]"
+  },
+  "performance": {
+    "portfolio_value_t1": 101317.94014817658,
+    "portfolio_value_t2": 114154.3752302716,
+    "num_trades_t1": 0,
+    "num_trades_t2": 0
+  }
+}

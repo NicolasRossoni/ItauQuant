@@ -1,5 +1,0 @@
-{
-  "error": "Array must not contain infs or NaNs",
-  "error_type": "LinAlgError",
-  "portfolio_value": -1311.5978250795933
-}

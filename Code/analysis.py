@@ -12,8 +12,8 @@ CONFIGURAÇÕES (início do arquivo - modificar aqui):
 # ==========================================
 
 # 🔧 CONFIGURAÇÕES DINÂMICAS - ADAPTA PARA QUALQUER PERÍODO
-SOURCE_DATASET_ID = "WTI_bloomberg"         # ID da fonte original em data/raw/
-TEST_ID = "WTI_ISOLATED_STRATEGIES"        # ANÁLISE: Sistema com 2 estratégias isoladas
+SOURCE_DATASET_ID = "WTI_bloomberg"          # Dataset bloomberg oficial  
+TEST_ID = "WTI_SINGLE_2024"                   # ID do teste anual individual: 2024
 BENCHMARK_RETURN = 0.05                     # Retorno de benchmark anual (5%)
 GENERATE_DAILY_CHARTS = True                # Se deve gerar gráficos diários individuais (pode ser lento)
 CHART_STYLE = "seaborn-v0_8"                # Estilo dos gráficos matplotlib
@@ -502,9 +502,9 @@ def _generate_performance_comparison_isolated_strategies(results_path, raw_data,
     ax.plot(common_dates, t2_values, label='Schwartz-Smith Tenor 2', 
             linewidth=2.5, color='green', alpha=0.9)
     ax.plot(common_dates, buy_hold_values, label='Buy & Hold (WTI)', 
-            linewidth=2, color='orange', alpha=0.8)
-    ax.plot(common_dates, risk_free_series, label='Risk-Free Rate (5%)', 
             linewidth=2, color='red', alpha=0.8)
+    ax.plot(common_dates, risk_free_series, label='Risk-Free Rate (5%)', 
+            linewidth=2, color='darkorange', alpha=0.8)
     
     # Linha do eixo 0 (valor inicial)
     ax.axhline(y=initial_value, color='black', linestyle='--', 
@@ -515,7 +515,7 @@ def _generate_performance_comparison_isolated_strategies(results_path, raw_data,
                 fontsize=16, fontweight='bold', pad=20)
     ax.set_xlabel('Data', fontsize=12)
     ax.set_ylabel('Valor da Carteira ($)', fontsize=12)
-    ax.legend(loc='upper left', fontsize=11)
+    ax.legend(loc='upper right', fontsize=11)
     ax.grid(True, alpha=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
@@ -612,7 +612,7 @@ def _generate_performance_comparison_complete(portfolio_perf, raw_data, output_d
     ax.set_title('Comparação de Performance: Estratégia vs Benchmarks', fontsize=14, fontweight='bold')
     ax.set_xlabel('Data')
     ax.set_ylabel('Valor da Carteira ($)')
-    ax.legend()
+    ax.legend(loc='upper right')
     ax.grid(True, alpha=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
@@ -853,76 +853,45 @@ def _generate_single_tenor_chart(tenor, prices, trades, tenor_dir, chunk_num, pe
         ax1.axvline(x=model_start_date, color='gray', linestyle='--', alpha=0.7, linewidth=2, 
                    label='Início do Modelo')
     
-    # 🔬 DECISÕES CIENTÍFICAS REAIS DE TRADING (dos daily_results)
-    try:
-        import json
-        import os
-        results_path = "data/processed/WTI_ISOLATED_STRATEGIES"
-        daily_results_path = os.path.join(results_path, "daily_results")
+    # 🎯 DECISÕES REAIS DE TRADING (que passaram por todos os filtros)
+    if not trades.empty:
+        # Para estratégias isoladas, usar mudanças significativas no portfolio como proxy das ordens executadas
+        if 'side' in trades.columns:
+            buy_signals = trades[trades['side'] == 'BUY']
+            sell_signals = trades[trades['side'] == 'SELL']
+        elif 'portfolio_value' in trades.columns:
+            # Usar mudanças significativas no portfolio como proxy de ordens executadas
+            portfolio_changes = trades['portfolio_value'].pct_change().fillna(0)
+            threshold = portfolio_changes.std() * 2
+            buy_signals = trades[portfolio_changes > threshold]
+            sell_signals = trades[portfolio_changes < -threshold]
+        else:
+            buy_signals = pd.DataFrame()
+            sell_signals = pd.DataFrame()
         
-        # Extrair número do tenor (tenor_1 -> 1, tenor_2 -> 2)
-        tenor_idx = int(tenor.split('_')[1])
-        tenor_key = f'signals_t{tenor_idx}'
-        
-        buy_dates = []
-        sell_dates = []
-        
-        # Iterar pelos resultados diários para encontrar decisões reais
-        for date_index in prices.index:
-            date_str = date_index.strftime('%Y-%m-%d')
-            json_file = os.path.join(daily_results_path, f"{date_str}.json")
-            
-            if os.path.exists(json_file):
-                try:
-                    with open(json_file, 'r') as f:
-                        day_data = json.load(f)
-                    
-                    if 'trading_decisions' in day_data and tenor_key in day_data['trading_decisions']:
-                        # Extrair sinal de trading do JSON
-                        signals_str = day_data['trading_decisions'][tenor_key]
-                        if signals_str and signals_str != "[]":
-                            # Converter string numpy para valor
-                            import ast
-                            try:
-                                signals_array = ast.literal_eval(signals_str.replace('[', '').replace(']', ''))
-                                if isinstance(signals_array, (list, tuple)):
-                                    signal = signals_array[0] if len(signals_array) > 0 else 0
-                                else:
-                                    signal = signals_array
-                                
-                                # Classificar decisão científica
-                                if signal > 0:
-                                    buy_dates.append(date_index)
-                                elif signal < 0:
-                                    sell_dates.append(date_index)
-                            except:
-                                pass
-                except:
-                    pass
-        
-        # Plotar decisões científicas reais
-        if buy_dates:
-            valid_buy_dates = [d for d in buy_dates if d in prices.index]
-            if valid_buy_dates:
+        # Plotar ordens de compra executadas
+        if not buy_signals.empty and 'date' in buy_signals.columns:
+            buy_dates = pd.to_datetime(buy_signals['date'])
+            valid_buy_dates = buy_dates[buy_dates.isin(prices.index)]
+            if len(valid_buy_dates) > 0:
                 ax1.scatter(valid_buy_dates, prices.loc[valid_buy_dates], 
-                           color='darkgreen', marker='^', s=120, label='Decisão COMPRA (Científica)', zorder=5)
+                           color='darkgreen', marker='^', s=150, label='Decisão COMPRA', zorder=10, edgecolor='white', linewidth=2)
         
-        if sell_dates:
-            valid_sell_dates = [d for d in sell_dates if d in prices.index]
-            if valid_sell_dates:
+        # Plotar ordens de venda executadas
+        if not sell_signals.empty and 'date' in sell_signals.columns:
+            sell_dates = pd.to_datetime(sell_signals['date'])
+            valid_sell_dates = sell_dates[sell_dates.isin(prices.index)]
+            if len(valid_sell_dates) > 0:
                 ax1.scatter(valid_sell_dates, prices.loc[valid_sell_dates], 
-                           color='darkred', marker='v', s=120, label='Decisão VENDA (Científica)', zorder=5)
+                           color='darkred', marker='v', s=150, label='Decisão VENDA', zorder=10, edgecolor='white', linewidth=2)
         
-        print(f"   📊 {tenor}: {len(buy_dates)} compras científicas, {len(sell_dates)} vendas científicas")
-        
-    except Exception as e:
-        print(f"   ⚠️  Erro ao carregar decisões científicas: {e}")
-        # Fallback para método anterior se necessário
-        pass
+        print(f"   📊 {tenor}: {len(buy_signals)} compras executadas, {len(sell_signals)} vendas executadas")
+    else:
+        print(f"   📊 {tenor}: Nenhuma decisão de trading no período")
     
     ax1.set_title(f'{tenor}: {period_title} - Preços e Decisões de Trading')
     ax1.set_ylabel('Preço ($)')
-    ax1.legend()
+    ax1.legend(loc='upper right')
     ax1.grid(True, alpha=0.3)
     
     # 🔧 NOVO: Subplot 2 - MISPRICING REAL DE TRADING (F_modelo - F_mercado)
@@ -1013,7 +982,7 @@ def _generate_single_tenor_chart(tenor, prices, trades, tenor_dir, chunk_num, pe
     ax2.set_title(f'{tenor}: {period_title} - Mispricing Real de Trading')
     ax2.set_xlabel('Data')
     ax2.set_ylabel('Mispricing ($)')
-    ax2.legend()
+    ax2.legend(loc='upper right')
     ax2.grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -1400,8 +1369,8 @@ def _generate_strategy_comparison_table(results_path, output_dir):
             
             metrics_df = pd.DataFrame(metrics_data).T
             
-            # Criar visualização da tabela com estilo profissional (mais larga)
-            fig, ax = plt.subplots(figsize=(18, 8))
+            # Criar visualização da tabela com estilo profissional (menos altura)
+            fig, ax = plt.subplots(figsize=(18, 2.5))  # Reduzido de 8 para 6
             ax.axis('tight')
             ax.axis('off')
             
@@ -1427,8 +1396,13 @@ def _generate_strategy_comparison_table(results_path, output_dir):
                         formatted_row.append(str(value))
                 formatted_data.append(formatted_row)
             
-            # Criar tabela com estilo profissional (colunas mais largas)
-            colwidths = [0.11] * len(metrics_df.columns)  # Aumentou de 0.09 para 0.11
+            # Criar tabela com estilo profissional (colunas específicas mais largas)
+            colwidths = []
+            for col in metrics_df.columns:
+                if col in ['Total Return (%)', 'Annual Return (%)']:
+                    colwidths.append(0.14)  # Mais largas para essas duas colunas
+                else:
+                    colwidths.append(0.11)  # Padrão para as outras
             table = ax.table(cellText=formatted_data,
                             rowLabels=metrics_df.index,
                             colLabels=metrics_df.columns,
@@ -1438,18 +1412,24 @@ def _generate_strategy_comparison_table(results_path, output_dir):
             
             # Estilizar tabela igual ao exemplo
             table.auto_set_font_size(False)
-            table.set_fontsize(9)
-            table.scale(1, 2.2)
+            table.set_fontsize(12)  # Aumentado de 9 para 12
+            table.scale(1, 1.6)     # Reduzido ainda mais de 1.8 para 1.6 (menos espaço Y)
             
             # Cabeçalho com fundo azul
             num_cols = len(metrics_df.columns)
             for i in range(num_cols):
                 table[(0, i)].set_facecolor('#4472C4')  # Azul profissional
-                table[(0, i)].set_text_props(weight='bold', color='white', fontsize=10)
+                table[(0, i)].set_text_props(weight='bold', color='white', fontsize=14)  # Aumentado de 10 para 14
             
-            # Título profissional
-            ax.set_title('Strategy Performance Comparison - Isolated Tenor Strategies', 
-                        fontsize=14, fontweight='bold', pad=20)
+            # Título profissional com período
+            test_id_parts = TEST_ID.split('_')
+            if len(test_id_parts) >= 3:
+                end_year = test_id_parts[1]
+                start_year = test_id_parts[2]
+                title = f'Strategy Performance Comparison - WTI {start_year}-{end_year}'
+            else:
+                title = 'Strategy Performance Comparison - Isolated Tenor Strategies'
+            ax.set_title(title, fontsize=14, fontweight='bold', pad=10)  # Reduzido pad de 20 para 10
             
             plt.tight_layout()
             plt.savefig(os.path.join(output_dir, 'strategy_comparison_table.png'), 
