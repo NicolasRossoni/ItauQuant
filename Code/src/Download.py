@@ -11,7 +11,7 @@ FUNÇÕES PÚBLICAS PRINCIPAIS:
 - format_raw_data(...): formata dados para estrutura padrão
 - save_raw_dataset(...): salva dataset no formato padronizado
 
-ATENÇÃO: Este módulo implementa downloads conforme padrões do help/Architecture.md.
+ATENÇÃO: Este módulo implementa downloads seguindo princípios de modularidade e abstração.
 Abstrai toda complexidade de conectividade para deixar download.py como fluxograma limpo.
 """
 
@@ -460,9 +460,12 @@ def create_synthetic_dataset(
     output_path: str = "data/raw"
 ) -> str:
     """
-    Cria dataset sintético para testes e desenvolvimento.
+    DEPRECATED: Esta função não é mais utilizada na pipeline principal.
     
-    Útil quando não há acesso a dados reais ou para testes rápidos.
+    O projeto agora utiliza dados Bloomberg de alta qualidade.
+    Mantida apenas para compatibilidade e testes de desenvolvimento.
+    
+    Cria dataset sintético para testes e desenvolvimento.
     
     Parâmetros
     ----------

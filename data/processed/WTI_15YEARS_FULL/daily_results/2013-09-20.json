@@ -1,0 +1,35 @@
+{
+  "model_params": {
+    "kappa": 5.0,
+    "sigma_X": 0.05,
+    "sigma_Y": 0.01,
+    "rho": 0.3,
+    "mu": -0.04026478104866917
+  },
+  "predictions": "[109.01618665 108.6633376 ]",
+  "trading_decisions": {
+    "signals": "[ 1. -1.]",
+    "target_weights": "[ 0.3 -0.3]",
+    "orders": [
+      [
+        0,
+        "BUY",
+        0.6
+      ]
+    ],
+    "z_scores": []
+  },
+  "market_data": {
+    "F_mkt_t": "tenor_1    106.39\ntenor_2    108.76\nName: 2013-09-19 00:00:00, dtype: float64",
+    "actual_F_mkt_t": "tenor_1    104.67\ntenor_2    109.22\nName: 2013-09-20 00:00:00, dtype: float64",
+    "ttm_t": "tenor_1    0.083333\ntenor_2    0.166667\nName: 2013-09-19 00:00:00, dtype: float64",
+    "mispricing": "[ 2.62618665 -0.0966624 ]"
+  },
+  "performance": {
+    "portfolio_value": 83249.45297072479,
+    "daily_pnl": -27.41130762981055,
+    "gross_pnl": 298.2336923701895,
+    "transaction_costs": 325.64500000000004,
+    "num_trades": 1
+  }
+}

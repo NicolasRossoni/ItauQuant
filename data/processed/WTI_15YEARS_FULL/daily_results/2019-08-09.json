@@ -1,0 +1,35 @@
+{
+  "model_params": {
+    "kappa": 0.1,
+    "sigma_X": 0.8,
+    "sigma_Y": 0.5,
+    "rho": 0.3,
+    "mu": 0.1
+  },
+  "predictions": "[53.47873493 56.5076143 ]",
+  "trading_decisions": {
+    "signals": "[ 1. -1.]",
+    "target_weights": "[ 0.3 -0.3]",
+    "orders": [
+      [
+        1,
+        "SELL",
+        0.6
+      ]
+    ],
+    "z_scores": []
+  },
+  "market_data": {
+    "F_mkt_t": "tenor_1    52.54\ntenor_2    57.38\nName: 2019-08-08 00:00:00, dtype: float64",
+    "actual_F_mkt_t": "tenor_1    54.50\ntenor_2    58.53\nName: 2019-08-09 00:00:00, dtype: float64",
+    "ttm_t": "tenor_1    0.083333\ntenor_2    0.166667\nName: 2019-08-08 00:00:00, dtype: float64",
+    "mispricing": "[ 0.93873493 -0.8723857 ]"
+  },
+  "performance": {
+    "portfolio_value": -15576.067323325033,
+    "daily_pnl": -428.4007747569284,
+    "gross_pnl": -260.6007747569284,
+    "transaction_costs": 167.79999999999998,
+    "num_trades": 1
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "model_params": {
+    "kappa": 5.0,
+    "sigma_X": 0.05,
+    "sigma_Y": 0.01,
+    "rho": 0.3,
+    "mu": -0.1
+  },
+  "predictions": "[108.4272318  107.57167119]",
+  "trading_decisions": {
+    "signals": "[ 1. -1.]",
+    "target_weights": "[ 0.3 -0.3]",
+    "orders": [
+      [
+        1,
+        "SELL",
+        0.6
+      ]
+    ],
+    "z_scores": []
+  },
+  "market_data": {
+    "F_mkt_t": "tenor_1    104.24\ntenor_2    110.23\nName: 2022-03-29 00:00:00, dtype: float64",
+    "actual_F_mkt_t": "tenor_1    107.82\ntenor_2    113.45\nName: 2022-03-30 00:00:00, dtype: float64",
+    "ttm_t": "tenor_1    0.083333\ntenor_2    0.166667\nName: 2022-03-29 00:00:00, dtype: float64",
+    "mispricing": "[ 4.1872318  -2.65832881]"
+  },
+  "performance": {
+    "portfolio_value": 89266.19983809386,
+    "daily_pnl": 1351.6109141400493,
+    "gross_pnl": 1676.2359141400493,
+    "transaction_costs": 324.625,
+    "num_trades": 1
+  }
+}

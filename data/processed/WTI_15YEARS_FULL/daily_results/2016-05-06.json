@@ -1,0 +1,35 @@
+{
+  "model_params": {
+    "kappa": 5.0,
+    "sigma_X": 0.05,
+    "sigma_Y": 0.01,
+    "rho": 0.3,
+    "mu": -0.1
+  },
+  "predictions": "[43.88217937 43.52723848]",
+  "trading_decisions": {
+    "signals": "[-1. -1.]",
+    "target_weights": "[-0.3 -0.3]",
+    "orders": [
+      [
+        0,
+        "SELL",
+        0.6
+      ]
+    ],
+    "z_scores": []
+  },
+  "market_data": {
+    "F_mkt_t": "tenor_1    44.32\ntenor_2    45.01\nName: 2016-05-05 00:00:00, dtype: float64",
+    "actual_F_mkt_t": "tenor_1    44.66\ntenor_2    45.37\nName: 2016-05-06 00:00:00, dtype: float64",
+    "ttm_t": "tenor_1    0.083333\ntenor_2    0.166667\nName: 2016-05-05 00:00:00, dtype: float64",
+    "mispricing": "[-0.43782063 -1.48276152]"
+  },
+  "performance": {
+    "portfolio_value": 16173.40797621471,
+    "daily_pnl": -138.51393931080045,
+    "gross_pnl": -1.5989393108004677,
+    "transaction_costs": 136.915,
+    "num_trades": 1
+  }
+}

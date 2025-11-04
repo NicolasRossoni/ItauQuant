@@ -1,0 +1,35 @@
+{
+  "model_params": {
+    "kappa": 5.0,
+    "sigma_X": 0.7543776151614231,
+    "sigma_Y": 0.01,
+    "rho": 0.3294869067669318,
+    "mu": 0.0997324243679595
+  },
+  "predictions": "[79.34022571 80.68194855]",
+  "trading_decisions": {
+    "signals": "[1. 1.]",
+    "target_weights": "[0.3 0.3]",
+    "orders": [
+      [
+        1,
+        "BUY",
+        0.6
+      ]
+    ],
+    "z_scores": []
+  },
+  "market_data": {
+    "F_mkt_t": "tenor_1    75.54\ntenor_2    80.58\nName: 2023-11-24 00:00:00, dtype: float64",
+    "actual_F_mkt_t": "tenor_1    74.86\ntenor_2    79.98\nName: 2023-11-27 00:00:00, dtype: float64",
+    "ttm_t": "tenor_1    0.083333\ntenor_2    0.166667\nName: 2023-11-24 00:00:00, dtype: float64",
+    "mispricing": "[3.80022571 0.10194855]"
+  },
+  "performance": {
+    "portfolio_value": 72347.07869862005,
+    "daily_pnl": -270.9945643010559,
+    "gross_pnl": -33.89456430105591,
+    "transaction_costs": 237.1,
+    "num_trades": 1
+  }
+}

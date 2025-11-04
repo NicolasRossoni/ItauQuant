@@ -1,0 +1,5 @@
+{
+  "error": "[Errno 32] Broken pipe",
+  "error_type": "BrokenPipeError",
+  "portfolio_value": 97828.51563794466
+}

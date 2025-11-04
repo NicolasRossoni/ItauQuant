@@ -1,0 +1,18 @@
+{
+  "source": "Bloomberg Terminal",
+  "commodity": "BRENT",
+  "dataset_name": "BRENT_bloomberg",
+  "created_at": "2025-11-02T19:57:24.536952",
+  "start_date": "2010-11-01",
+  "end_date": "2025-10-31",
+  "num_days": 3875,
+  "num_tenors": 1,
+  "tenors": [
+    "tenor_1"
+  ],
+  "price_range": {
+    "min": 19.33,
+    "max": 127.98,
+    "mean": 77.86051612903226
+  }
+}

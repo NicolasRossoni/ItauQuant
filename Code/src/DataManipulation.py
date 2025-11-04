@@ -15,8 +15,8 @@ FUNÇÕES PÚBLICAS PRINCIPAIS:
 - format_for_analysis(...): formata dados para análise
 - create_time_series(...): cria séries temporais padronizadas
 
-ATENÇÃO: Este módulo implementa manipulações conforme padrões do help/Architecture.md.
-Mantém compatibilidade com estrutura definida no LIVRO SAGRADO das teorias.
+ATENÇÃO: Este módulo implementa manipulações seguindo princípios de modularidade e clareza.
+Mantém compatibilidade com estrutura padronizada de dados definida no projeto.
 """
 
 import os
@@ -139,7 +139,7 @@ def save_data_to_processed(
     processed_path: str = "data/processed"
 ) -> str:
     """
-    Salva dados processados seguindo estrutura padrão definida no Architecture.md.
+    Salva dados processados seguindo estrutura padrão do projeto.
     
     Parâmetros
     ----------
@@ -547,12 +547,24 @@ def save_data_to_processed(results_data: Dict, dataset_id: str) -> str:
     
     os.makedirs(output_dir, exist_ok=True)
     
-    # Salvar DataFrames
+    # 🔧 Salvar DataFrames das 3 estratégias
     if 'portfolio_performance' in results_data:
         results_data['portfolio_performance'].to_csv(os.path.join(output_dir, "portfolio_performance.csv"))
     
+    if 'portfolio_performance_tenor1' in results_data:
+        results_data['portfolio_performance_tenor1'].to_csv(os.path.join(output_dir, "portfolio_performance_tenor1.csv"))
+    
+    if 'portfolio_performance_tenor2' in results_data:
+        results_data['portfolio_performance_tenor2'].to_csv(os.path.join(output_dir, "portfolio_performance_tenor2.csv"))
+    
     if 'trades_log' in results_data:
         results_data['trades_log'].to_csv(os.path.join(output_dir, "trades_log.csv"))
+    
+    if 'trades_log_tenor1' in results_data:
+        results_data['trades_log_tenor1'].to_csv(os.path.join(output_dir, "trades_log_tenor1.csv"))
+    
+    if 'trades_log_tenor2' in results_data:
+        results_data['trades_log_tenor2'].to_csv(os.path.join(output_dir, "trades_log_tenor2.csv"))
     
     if 'model_evolution' in results_data:
         results_data['model_evolution'].to_csv(os.path.join(output_dir, "model_evolution.csv"))
@@ -591,15 +603,32 @@ def load_config(config_path: str = "config/default.yaml") -> dict:
     if not os.path.exists(config_path):
         # Retornar configuração padrão se arquivo não existir
         return {
-            'method': 'MLE',
+            'method': 'MLE',  # Método otimizado L-BFGS-B
+            'calibration': {  # Nova configuração otimizada
+                'max_iter': 500,
+                'tol': 1e-6,
+                'init_params': {
+                    'kappa': 1.0,    # Baseado na literatura
+                    'sigma_X': 0.2,  # Volatilidade razoável
+                    'sigma_Y': 0.08, # Mínimo significativo
+                    'rho': 0.0,      # Fatores independentes
+                    'mu': 0.0        # Deriva neutra
+                }
+            },
+            'ttm_adjustment': {  # 🔧 DESABILITAR TTM ajustado temporariamente
+                'method': 'none',  # Usar TTM original
+                'base_ttm_days': [30, 60],  # 1 mês, 2 meses
+                'add_noise': False
+            },
+            # Manter compatibilidade com código existente
             'kalman': {
-                'max_iter': 200,
+                'max_iter': 500,
                 'tol': 1e-6,
                 'init_params': {
                     'kappa': 1.0,
-                    'sigma_X': 0.3,
-                    'sigma_Y': 0.2,
-                    'rho': 0.3,
+                    'sigma_X': 0.2,
+                    'sigma_Y': 0.08,
+                    'rho': 0.0,
                     'mu': 0.0
                 }
             },

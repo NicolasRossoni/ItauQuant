@@ -1,10 +1,18 @@
 """
 download.py
 
-Script principal de download de dados de futuros de commodities.
-Este é um FLUXOGRAMA LIMPO que abstrai toda complexidade no módulo src/Download.py.
+DEPRECATED - Este arquivo não é mais usado na pipeline principal.
+O projeto agora utiliza dados Bloomberg de alta qualidade.
 
-CONFIGURAÇÕES (início do arquivo - modificar aqui):
+Este arquivo permanece apenas como referência histórica da pipeline original
+que começava com downloads do Yahoo Finance. A estrutura atual do projeto
+utiliza dados Bloomberg pré-processados que são carregados diretamente
+no backtest.py.
+
+Para referência: este era o início da pipeline original:
+download.py → backtest.py → analysis.py
+
+CONFIGURAÇÕES HISTÓRICAS (não utilizadas):
 """
 
 # ==========================================
@@ -12,7 +20,7 @@ CONFIGURAÇÕES (início do arquivo - modificar aqui):
 # ==========================================
 
 DATASET_ID = "WTI_test_380d"             # ID do dataset a ser criado (18 meses)
-DATA_SOURCE = "yahoo"                   # Fonte dos dados: "yahoo", "cme" ou "synthetic"
+DATA_SOURCE = "yahoo"                   # Fonte dos dados: "yahoo" ou "cme" 
 START_DATE = "2023-07-01"               # Data inicial dos dados (YYYY-MM-DD) - ~380 dias úteis
 END_DATE = "2024-12-31"                 # Data final dos dados (YYYY-MM-DD)
 NUM_TENORS = 6                          # Número de tenores (meses) a baixar
@@ -20,8 +28,6 @@ COMMODITY = "WTI"                       # Commodity (para CME): "WTI", "NG", etc
 
 # Configurações avançadas (opcional)
 CONTANGO_MONTHLY = 0.004                # Contango mensal para Yahoo Finance (0.4%)
-BASE_PRICE = 80.0                       # Preço base para dados sintéticos
-VOLATILITY = 0.25                       # Volatilidade anual para sintéticos (25%)
 
 # ==========================================
 # FLUXOGRAMA PRINCIPAL
@@ -33,7 +39,6 @@ import numpy as np
 from src.Download import (
     download_yahoo_wti, 
     download_cme_data, 
-    create_synthetic_dataset,
     format_raw_data,
     save_raw_dataset
 )
@@ -109,25 +114,8 @@ def main():
                 end_date=END_DATE
             )
             
-        elif DATA_SOURCE.lower() == "synthetic":
-            print(f"   🎲 Gerando dados sintéticos com GBM...")
-            print(f"   📊 Parâmetros: preço_base={BASE_PRICE}, vol={VOLATILITY:.1%}")
-            
-            dataset_path = create_synthetic_dataset(
-                dataset_id=DATASET_ID,
-                start_date=START_DATE,
-                end_date=END_DATE,
-                num_tenors=NUM_TENORS,
-                base_price=BASE_PRICE,
-                volatility=VOLATILITY
-            )
-            print("✅ PASSO 1: Download sintético concluído com sucesso!")
-            print(f"📁 Dataset completo salvo em: {dataset_path}")
-            print("🎉 EXECUÇÃO FINALIZADA - Dataset pronto para uso!")
-            return
-            
         else:
-            raise ValueError(f"Fonte '{DATA_SOURCE}' não suportada. Use: yahoo, cme ou synthetic")
+            raise ValueError(f"Fonte '{DATA_SOURCE}' não suportada. Use: yahoo ou cme")
         
         # Diagnóstico dos dados baixados
         F_mkt_shape = raw_data['F_mkt'].shape

@@ -1,0 +1,19 @@
+{
+  "source": "Bloomberg Terminal",
+  "commodity": "WTI",
+  "dataset_name": "WTI_bloomberg",
+  "created_at": "2025-11-02T19:57:24.423253",
+  "start_date": "2010-11-01",
+  "end_date": "2025-10-31",
+  "num_days": 3778,
+  "num_tenors": 2,
+  "tenors": [
+    "tenor_1",
+    "tenor_2"
+  ],
+  "price_range": {
+    "min": -37.63,
+    "max": 127.98,
+    "mean": 74.57202620434092
+  }
+}

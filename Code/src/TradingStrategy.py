@@ -8,8 +8,8 @@ FUNÇÕES PÚBLICAS PRINCIPAIS:
 - PrepareTradingInputs(...): prepara mispricing, matriz de risco, limites, etc.
 - TradeEngine(...): gera sinais, posições-alvo e ordens executáveis
 
-ATENÇÃO: Este módulo implementa a estratégia conforme definida no help/Teory.txt.
-Respeita os mandamentos filosóficos definidos no help/Architecture.md.
+ATENÇÃO: Este módulo implementa a estratégia de trading baseada em mispricing do modelo Schwartz-Smith.
+Segue os princípios de modularidade, documentação clara e I/O determinístico.
 """
 
 import numpy as np
@@ -84,17 +84,20 @@ def PrepareTradingInputs(
     
     # 1. Calcular mispricing (Delta F)
     mispricing = _compute_mispricing(F_model_t, F_mkt_t)
-    logger.info(f"Mispricing calculado: média={np.mean(mispricing):.4f}, "
-                f"std={np.std(mispricing):.4f}, "
+    logger.info(f"Mispricing calculado: média={np.mean(mispricing):.4f}, std={np.std(mispricing):.4f}, "
                 f"min={np.min(mispricing):.4f}, max={np.max(mispricing):.4f}")
     
     # 2. Estimar matriz de covariância
-    Sigma = _estimate_covariance(
-        F_mkt_hist, F_model_hist, cfg.get('risk', {}), M
-    )
-    logger.info(f"Matriz Sigma estimada: shape={Sigma.shape}, "
-                f"eigenvalues min={np.min(np.linalg.eigvals(Sigma)):.6f}, "
+    risk_cfg = cfg.get('risk', {})
+    Sigma = _estimate_covariance(F_mkt_hist, F_model_hist, risk_cfg, M)
+    logger.info(f"Matriz Sigma estimada: shape={Sigma.shape}, eigenvalues min={np.min(np.linalg.eigvals(Sigma)):.6f}, "
                 f"max={np.max(np.linalg.eigvals(Sigma)):.6f}")
+    
+    # 🔧 DEBUG: Valores detalhados de Sigma
+    sigma_diag = np.sqrt(np.diag(Sigma))
+    logger.info(f"DEBUG: Sigma diagonal (std): {np.sqrt(np.diag(Sigma))}")
+    logger.info(f"DEBUG: Mispricing values: {mispricing}")
+    logger.info(f"DEBUG: Momentum signals will be: {np.sign(mispricing)}")
     
     # 3. Derivar limites e limiares
     limits, thresh = _derive_limits_and_thresholds(cfg, Sigma, cost, M)
@@ -131,104 +134,97 @@ def TradeEngine(
     """
     Motor de decisão de trading que transforma mispricing + risco + limites em ordens executáveis.
     
-    Esta é uma das FUNÇÕES PÚBLICAS PRINCIPAIS do módulo TradingStrategy.py.
-    Implementa a estratégia de trading baseada em mispricing conforme Teory.txt.
+    🚀 ESTRATÉGIA MOMENTUM PURA:
+    - Sinal = sign(mispricing) (sem z-scores ou histerese)
+    - Se F_modelo > F_mercado → COMPRAR (momentum de alta)
+    - Se F_modelo < F_mercado → VENDER (momentum de baixa)
+    - Dimensionamento via vol-target
     
     Parâmetros
     ----------
     mispricing : np.ndarray [M]
-        DeltaF = F_model - F_mkt por tenor.
+        Diferenças F_modelo - F_mercado para cada tenor.
     Sigma : np.ndarray [M, M]
-        Matriz de covariância de retornos dos futuros.
+        Matriz de covariância dos retornos.
     limits : np.ndarray [M]
-        Limites de posição por tenor (máximo valor absoluto).
-    thresh : np.ndarray [M] ou dict
-        Limiares de entrada/saída. Se dict: {'z_in': valor, 'z_out': valor}.
+        Limites máximos de posição por tenor.
+    thresh : dict ou np.ndarray
+        (IGNORADO na estratégia momentum)
     frictions : dict
-        Custos: {'tick_value': [M], 'fee': [M], 'slippage': float}.
+        Custos de transação e fricções.
     method : str
-        Método de dimensionamento: "vol_target" ou "qp" (Quadratic Programming).
+        Método de dimensionamento ("vol_target" ou "qp").
     topK : int, opcional
-        Número máximo de tenores a operar (maiores |z-score|).
+        Número máximo de tenores ativos.
     w_prev : np.ndarray [M], opcional
-        Posições vigentes (para calcular turnover no QP).
+        Posições anteriores.
     cfg : dict, opcional
-        Configurações adicionais (vol_target, parâmetros QP).
+        Configurações adicionais.
     
     Retorna
     -------
     dict
-        {
-            'signals': np.ndarray [M] em {-1, 0, +1} (vender, nada, comprar),
-            'target_w': np.ndarray [M] posições-alvo normalizadas,
-            'orders': list de (maturity_idx, 'BUY'|'SELL', qty),
-            'z_scores': np.ndarray [M] (para análise)
-        }
-    
-    Exemplos
-    --------
-    >>> result = TradeEngine(mispricing, Sigma, limits, thresh, frictions)
-    >>> print(f"Sinais: {result['signals']}")
-    >>> print(f"Ordens: {len(result['orders'])} operações")
-    >>> for order in result['orders']:
-    ...     print(f"Tenor {order[0]}: {order[1]} {order[2]} contratos")
+        Contém 'signals', 'target_w', 'orders', 'mispricing'.
     """
-    logger.info("=== Iniciando TradeEngine ===")
+    logger.info("=== Iniciando TradeEngine (MOMENTUM STRATEGY) ===")
     
     M = len(mispricing)
+    w_prev = w_prev if w_prev is not None else np.zeros(M)
     
-    if w_prev is None:
-        w_prev = np.zeros(M)
+    # 1. 🚀 ESTRATÉGIA MOMENTUM: Sinal = sign(mispricing)
+    signals = np.sign(mispricing)
     
-    if cfg is None:
-        cfg = {}
+    # 🔧 REDUZIDO: Threshold mais sensível para mais sinais
+    noise_threshold = 0.05  # $0.05 por barril (era $0.10)
+    signals = np.where(np.abs(mispricing) >= noise_threshold, signals, 0)
     
-    # Validar inputs
-    if Sigma.shape != (M, M):
-        raise ValueError(f"Sigma shape {Sigma.shape} != ({M}, {M})")
-    if len(limits) != M:
-        raise ValueError(f"limits length {len(limits)} != {M}")
+    logger.info(f"Mispricing: min={np.min(mispricing):.3f}, max={np.max(mispricing):.3f}, mean={np.mean(mispricing):.3f}")
     
-    # 1. Calcular z-scores
-    z_scores = _zscore(mispricing, Sigma)
-    logger.info(f"Z-scores: min={np.min(z_scores):.2f}, max={np.max(z_scores):.2f}, "
-                f"mean={np.mean(z_scores):.2f}, std={np.std(z_scores):.2f}")
-    
-    # 2. Seleção top-K (opcional)
-    active_mask = np.ones(M, dtype=bool)
+    # 2. Selecionar tenores ativos (topK se especificado)
     if topK is not None and topK < M:
-        active_mask = _select_topK_by_abs_z(z_scores, topK)
-        logger.info(f"Top-K={topK} selecionados: {np.sum(active_mask)} tenores ativos")
+        # Selecionar os K maiores mispricings em valor absoluto
+        active_mask = _select_topK_by_abs_mispricing(mispricing, topK)
+        signals = signals * active_mask.astype(int)
+        logger.info(f"Seleção topK={topK}: {np.sum(active_mask)} tenores ativos")
     
-    # 3. Aplicar histerese para gerar sinais
-    signals = _apply_hysteresis(z_scores, thresh, w_prev, active_mask)
-    logger.info(f"Sinais: BUY={np.sum(signals==1)}, SELL={np.sum(signals==-1)}, "
-                f"HOLD={np.sum(signals==0)}")
+    signal_counts = {
+        'BUY': np.sum(signals > 0),
+        'SELL': np.sum(signals < 0), 
+        'HOLD': np.sum(signals == 0)
+    }
+    logger.info(f"Sinais: BUY={signal_counts['BUY']}, SELL={signal_counts['SELL']}, HOLD={signal_counts['HOLD']}")
     
-    # 4. Dimensionar posições
+    # 3. Dimensionar posições
+    logger.info(f"Dimensionamento: {method}")
     if method == "vol_target":
-        target_w = _size_positions_vol_target(signals, Sigma, cfg, M)
-        logger.info("Dimensionamento: vol_target")
+        target_w = _size_positions_vol_target(signals, Sigma, cfg or {}, M)
     elif method == "qp":
-        target_w = _optimize_qp(mispricing, Sigma, limits, frictions, w_prev, cfg)
-        logger.info("Dimensionamento: QP mean-variance")
+        target_w = _optimize_qp_momentum(mispricing, Sigma, limits, frictions, w_prev, cfg or {})
     else:
-        raise ValueError(f"Método '{method}' não suportado. Use 'vol_target' ou 'qp'.")
+        raise ValueError(f"Método de dimensionamento inválido: {method}")
     
-    # 5. Aplicar limites
+    # 4. Aplicar limites de posição
     target_w = _apply_limits(target_w, limits)
-    logger.info(f"Target weights (após limites): soma={np.sum(np.abs(target_w)):.4f}, "
-                f"max={np.max(np.abs(target_w)):.4f}")
+    logger.info(f"Target weights (após limites): soma={np.sum(np.abs(target_w)):.4f}, max={np.max(np.abs(target_w)):.4f}")
     
-    # 6. Construir ordens
+    # 5. Gerar ordens baseadas na diferença com posições anteriores
     orders = _build_orders(target_w, w_prev, frictions)
     logger.info(f"Ordens geradas: {len(orders)} operações")
+    
+    # Debug se não há ordens
+    if len(orders) == 0:
+        delta_w = target_w - w_prev
+        logger.info(f"DEBUG: target_w = {target_w}")
+        logger.info(f"DEBUG: w_prev = {w_prev}")
+        logger.info(f"DEBUG: delta_w = {delta_w}")
+        logger.info(f"DEBUG: abs(delta_w) = {np.abs(delta_w)}")
+        logger.info(f"DEBUG: max abs(delta_w) = {np.max(np.abs(delta_w)):.6f}")
     
     result = {
         'signals': signals,
         'target_w': target_w,
         'orders': orders,
-        'z_scores': z_scores  # Para análise posterior
+        'mispricing': mispricing  # Para análise posterior (em vez de z_scores)
     }
     
     logger.info("=== TradeEngine concluído ===")
@@ -281,39 +277,45 @@ def _estimate_covariance(
     use_shrinkage = risk_cfg.get('shrinkage', True)
     
     if F_mkt_hist is not None and len(F_mkt_hist) > lookback:
-        logger.info(f"Estimando covariância usando histórico ({source})")
+        logger.info(f"Usando {source} para estimar covariância com janela de {lookback} dias")
         
-        # Usar janela lookback
-        data_window = F_mkt_hist[-lookback:, :]
+        # Selecionar janela de dados
+        hist_window = F_mkt_hist[-lookback:] if len(F_mkt_hist) > lookback else F_mkt_hist
+        logger.info(f"DEBUG: hist_window shape: {hist_window.shape}")
         
+        # Calcular retornos
         if source == 'returns':
-            # Calcular retornos log
-            returns = np.diff(np.log(data_window + 1e-10), axis=0)
-        elif source == 'residuals' and F_model_hist is not None:
-            # Usar resíduos F_mkt - F_model
-            model_window = F_model_hist[-lookback:, :]
-            residuals = data_window - model_window
-            returns = np.diff(residuals, axis=0)
-        else:
-            # Fallback para retornos
-            returns = np.diff(np.log(data_window + 1e-10), axis=0)
+            returns = np.diff(np.log(hist_window), axis=0)  # Log-returns
+        else:  # residuals
+            if F_model_hist is not None:
+                model_window = F_model_hist[-lookback:] if len(F_model_hist) > lookback else F_model_hist
+                residuals = hist_window - model_window
+                returns = np.diff(residuals, axis=0)
+            else:
+                logger.warning("F_model_hist não disponível para residuals. Usando returns.")
+                returns = np.diff(np.log(hist_window), axis=0)
         
-        # Remover NaNs
-        returns = np.nan_to_num(returns, nan=0.0)
+        logger.info(f"DEBUG: returns shape: {returns.shape}")
+        logger.info(f"DEBUG: returns std por tenor: {np.std(returns, axis=0)}")
+        logger.info(f"DEBUG: returns mean por tenor: {np.mean(returns, axis=0)}")
         
-        # Estimar covariância
-        if use_shrinkage and returns.shape[0] > M:
+        # Estimar covariância com shrinkage (se habilitado)
+        if use_shrinkage:
             try:
                 lw = LedoitWolf()
-                Sigma = lw.fit(returns).covariance_
+                Sigma, _ = lw.fit(returns).covariance_, lw.shrinkage_
+                logger.info(f"DEBUG: Shrinkage usado, shrinkage factor: {_}")
             except Exception as e:
                 logger.warning(f"Shrinkage falhou: {e}. Usando covariância empírica.")
                 Sigma = np.cov(returns, rowvar=False)
         else:
             Sigma = np.cov(returns, rowvar=False)
         
+        logger.info(f"DEBUG: Sigma raw diagonal: {np.sqrt(np.diag(Sigma))}")
+        
         # Garantir que é SPD
         Sigma = _ensure_spd_matrix(Sigma)
+        logger.info(f"DEBUG: Sigma final diagonal: {np.sqrt(np.diag(Sigma))}")
         
     else:
         logger.warning("Histórico insuficiente. Usando matriz diagonal simples.")
@@ -408,34 +410,17 @@ def _build_frictions(
     return frictions
 
 
-def _zscore(mispricing: np.ndarray, Sigma: np.ndarray) -> np.ndarray:
+# FUNÇÃO REMOVIDA - NÃO USADA NA ESTRATÉGIA MOMENTUM:
+# def _zscore(): Z-scores não são necessários para momentum puro
+
+
+def _select_topK_by_abs_mispricing(mispricing: np.ndarray, topK: int) -> np.ndarray:
     """
-    Calcula z-score por tenor usando desvio-padrão marginal.
-    
-    z_i = mispricing_i / sqrt(Sigma_ii)
+    Seleciona os K tenores com maiores |mispricing| (para estratégia momentum).
     
     Parâmetros
     ----------
     mispricing : np.ndarray [M]
-    Sigma : np.ndarray [M, M]
-    
-    Retorna
-    -------
-    np.ndarray [M]
-    """
-    std_diag = np.sqrt(np.diag(Sigma))
-    std_diag = np.where(std_diag < 1e-8, 1e-8, std_diag)  # Evitar divisão por zero
-    z = mispricing / std_diag
-    return z
-
-
-def _select_topK_by_abs_z(z_scores: np.ndarray, topK: int) -> np.ndarray:
-    """
-    Seleciona os K tenores com maiores |z-score|.
-    
-    Parâmetros
-    ----------
-    z_scores : np.ndarray [M]
     topK : int
     
     Retorna
@@ -443,81 +428,13 @@ def _select_topK_by_abs_z(z_scores: np.ndarray, topK: int) -> np.ndarray:
     np.ndarray [M] bool
         Máscara de tenores selecionados.
     """
-    abs_z = np.abs(z_scores)
-    if topK >= len(abs_z):
-        return np.ones(len(abs_z), dtype=bool)
+    abs_mispricing = np.abs(mispricing)
+    if topK >= len(abs_mispricing):
+        return np.ones(len(abs_mispricing), dtype=bool)
     
-    threshold = np.partition(abs_z, -topK)[-topK]
-    mask = abs_z >= threshold
+    threshold = np.partition(abs_mispricing, -topK)[-topK]
+    mask = abs_mispricing >= threshold
     return mask
-
-
-def _apply_hysteresis(
-    z_scores: np.ndarray,
-    thresh: Union[dict, np.ndarray],
-    w_prev: np.ndarray,
-    active_mask: np.ndarray
-) -> np.ndarray:
-    """
-    Aplica histerese para gerar sinais discretos {-1, 0, +1}.
-    
-    Regras de histerese (para evitar whipsaw):
-    - Se |z| > z_in: entrar na direção do mispricing (sinal = sign(z))
-    - Se |z| < z_out E há posição existente: sair (sinal = 0)
-    - Caso contrário: manter posição anterior
-    
-    Parâmetros
-    ----------
-    z_scores : np.ndarray [M]
-    thresh : dict com 'z_in' e 'z_out' ou array
-    w_prev : np.ndarray [M]
-    active_mask : np.ndarray [M] bool
-    
-    Retorna
-    -------
-    np.ndarray [M]
-        Sinais em {-1, 0, +1}
-    """
-    M = len(z_scores)
-    signals = np.zeros(M)
-    
-    # Extrair limiares
-    if isinstance(thresh, dict):
-        z_in = thresh.get('z_in', 1.5)
-        z_out = thresh.get('z_out', 0.5)
-    else:
-        z_in = 1.5
-        z_out = 0.5
-    
-    # Converter para arrays se forem escalares
-    if isinstance(z_in, (int, float)):
-        z_in = np.ones(M) * z_in
-    else:
-        z_in = np.array(z_in) if not isinstance(z_in, np.ndarray) else z_in
-        
-    if isinstance(z_out, (int, float)):
-        z_out = np.ones(M) * z_out
-    else:
-        z_out = np.array(z_out) if not isinstance(z_out, np.ndarray) else z_out
-    
-    for i in range(M):
-        if not active_mask[i]:
-            signals[i] = 0
-            continue
-        
-        abs_z = np.abs(z_scores[i])
-        
-        # Entrada: |z| > z_in
-        if abs_z > z_in[i]:
-            signals[i] = np.sign(z_scores[i])
-        # Saída: |z| < z_out E há posição existente
-        elif abs_z < z_out[i] and np.abs(w_prev[i]) > 1e-6:
-            signals[i] = 0  # Fechar posição
-        # Manter posição anterior
-        else:
-            signals[i] = np.sign(w_prev[i]) if np.abs(w_prev[i]) > 1e-6 else 0
-    
-    return signals
 
 
 def _size_positions_vol_target(
@@ -571,7 +488,7 @@ def _size_positions_vol_target(
     return w_scaled
 
 
-def _optimize_qp(
+def _optimize_qp_momentum(
     mispricing: np.ndarray,
     Sigma: np.ndarray,
     limits: np.ndarray,
@@ -580,11 +497,10 @@ def _optimize_qp(
     cfg: dict
 ) -> np.ndarray:
     """
-    Otimiza posições usando Quadratic Programming (mean-variance).
+    Otimiza posições usando Quadratic Programming para estratégia momentum.
     
-    Problema de otimização:
+    Problema de otimização (momentum puro):
     maximize: mispricing @ w - (gamma/2) * w @ Sigma @ w
-              - lambda_l1 * ||w||_1
               - lambda_turnover * ||w - w_prev||_1
     
     subject to: -limits <= w <= limits
@@ -597,48 +513,39 @@ def _optimize_qp(
     frictions : dict
     w_prev : np.ndarray [M]
     cfg : dict
-        {'sizing': {'qp': {'gamma': float, 'lambda_l1': float, 'lambda_turnover': float}}}
     
     Retorna
     -------
     np.ndarray [M]
     """
-    sizing_cfg = cfg.get('sizing', {})
-    qp_cfg = sizing_cfg.get('qp', {})
-    
-    gamma = qp_cfg.get('gamma', 5.0)
-    lambda_l1 = qp_cfg.get('lambda_l1', 0.0)
-    lambda_turnover = qp_cfg.get('lambda_turnover', 0.1)
+    qp_cfg = cfg.get('qp', {})
+    gamma = qp_cfg.get('gamma', 3.0)  # Menor aversão ao risco para momentum
+    lambda_turnover = qp_cfg.get('lambda_turnover', 0.05)  # Menos penalização de turnover
     
     M = len(mispricing)
     
     def objective(w):
         """Função objetivo para minimização (negativa do problema original)."""
-        # Expected return
+        # Expected return (momentum: maior peso onde mispricing é maior)
         expected_return = mispricing @ w
         
-        # Risk penalty
+        # Risk penalty (reduzido para momentum)
         risk_penalty = 0.5 * gamma * (w @ Sigma @ w)
         
-        # L1 penalty
-        l1_penalty = lambda_l1 * np.sum(np.abs(w))
-        
-        # Turnover penalty
+        # Turnover penalty (reduzido para permitir mais mudanças)
         turnover_penalty = lambda_turnover * np.sum(np.abs(w - w_prev))
         
         # Minimizar o negativo (= maximizar original)
-        return -(expected_return - risk_penalty - l1_penalty - turnover_penalty)
-    
-    # Bounds: -limits <= w <= limits
-    bounds = [(-limits[i], limits[i]) for i in range(M)]
-    
-    # Chute inicial: posição anterior
-    x0 = w_prev.copy()
-    
-    # Garantir que x0 está dentro dos bounds
-    x0 = np.clip(x0, -limits, limits)
+        return -(expected_return - risk_penalty - turnover_penalty)
     
     try:
+        # Bounds: -limits <= w <= limits
+        bounds = [(-limits[i], limits[i]) for i in range(M)]
+        
+        # Chute inicial baseado em momentum
+        x0 = np.sign(mispricing) * 0.1  # Pequena posição na direção do momentum
+        
+        # Otimizar
         result = minimize(
             objective,
             x0=x0,
@@ -650,13 +557,13 @@ def _optimize_qp(
         if result.success:
             return result.x
         else:
-            logger.warning(f"QP não convergiu: {result.message}. Usando vol_target.")
+            logger.warning(f"QP momentum não convergiu: {result.message}. Usando vol_target.")
             # Fallback para vol_target simples
             signals = np.sign(mispricing)
             return _size_positions_vol_target(signals, Sigma, cfg, M)
             
     except Exception as e:
-        logger.warning(f"Erro no QP: {e}. Usando vol_target.")
+        logger.warning(f"Erro no QP momentum: {e}. Usando vol_target.")
         signals = np.sign(mispricing)
         return _size_positions_vol_target(signals, Sigma, cfg, M)
 
