@@ -13,9 +13,9 @@ CONFIGURAÇÕES (início do arquivo - modificar aqui):
 
 SOURCE_DATASET_ID = "WTI_bloomberg"      # Nome/ID da pasta em data/raw/ que vamos usar (dados reais Bloomberg)
 TRAIN_WINDOW_DAYS = 60                  # Janela de calibração: 3 meses (60 dias úteis)
-TEST_START_DATE = "2023-01-01"          # TESTE ANUAL: Jan 2023 - Dez 2023 (1 ano)
-TEST_END_DATE = "2023-12-31"           # Fim do período anual 2023
-CUSTOM_TEST_ID = "WTI_SINGLE_2023"             # Teste anual individual: 2023
+TEST_START_DATE = "2011-01-01"          # TESTE ANUAL: Jan 2011 - Dez 2011 (1 ano)
+TEST_END_DATE = "2011-12-31"           # Fim do período anual 2011
+CUSTOM_TEST_ID = "WTI_SINGLE_2011"             # Teste anual individual: 2011
 TEST_DAYS = 260                         # Aproximadamente 1 ano de dados úteis
 INITIAL_PORTFOLIO_VALUE = 100000        # Capital inicial em USD
 MODEL_METHOD = "MOMENTS"                 # Método de calibração: Method of Moments

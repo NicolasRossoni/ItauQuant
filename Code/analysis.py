@@ -13,7 +13,7 @@ CONFIGURAÇÕES (início do arquivo - modificar aqui):
 
 # 🔧 CONFIGURAÇÕES DINÂMICAS - ADAPTA PARA QUALQUER PERÍODO
 SOURCE_DATASET_ID = "WTI_bloomberg"          # Dataset bloomberg oficial  
-TEST_ID = "WTI_SINGLE_2024"                   # ID do teste anual individual: 2024
+TEST_ID = "WTI_SINGLE_2020"                   # ID do teste anual individual: 2020
 BENCHMARK_RETURN = 0.05                     # Retorno de benchmark anual (5%)
 GENERATE_DAILY_CHARTS = True                # Se deve gerar gráficos diários individuais (pode ser lento)
 CHART_STYLE = "seaborn-v0_8"                # Estilo dos gráficos matplotlib

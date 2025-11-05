@@ -1,0 +1,6 @@
+,date,tenor,side,quantity,price
+0,2019-01-02,tenor_1,BUY,0.3,45.41
+1,2019-08-14,tenor_1,SELL,0.6,57.1
+2,2019-08-15,tenor_1,BUY,0.6,55.23
+3,2019-09-17,tenor_1,SELL,0.6,62.9
+4,2019-09-18,tenor_1,BUY,0.6,59.34
